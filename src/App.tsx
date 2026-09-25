@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { db } from "./db";
 import type { ActiveWorkout, BodyEntry, SetLog, Settings, WorkoutHistory, WorkoutTemplate } from "./types";
 import { actual1rm, bestE1rm, e1rm, volume } from "./stats";
+import { normalizeSetForCompletion, shouldStartRest, toFiniteNumber } from "./workoutLogic";
 import { exerciseSubstitutions } from "./seed";
 
 type Tab="train"|"history"|"progress"|"body"|"more";
@@ -49,7 +50,7 @@ export default function App(){
  async function persistActive(w:ActiveWorkout){await db.active.put(w);setActive({...w});}
  async function setField(ei:number,si:number,field:"weight"|"reps"|"rir",value:string){
   if(!active)return; const w=structuredClone(active); const s=w.exercises[ei].sets[si];
-  (s as any)[field]=value===""?null:parseNum(value); await persistActive(w);
+  (s as any)[field]=value===""?null:value; await persistActive(w);
  }
  async function completeSet(ei:number,si:number){
   if(!active)return;
@@ -59,7 +60,7 @@ export default function App(){
   s.completedAt=Date.now();
   const oldBest=bestE1rm(workouts,ex.name),newE=e1rm(s.weight,s.reps);
   if(newE>oldBest && oldBest>0) notify(`Nowy e1RM PR • ${newE.toFixed(1)} kg`);
-  if(settings?.autoRest!==false){
+  if(settings?.autoRest!==false && shouldStartRest(w,ei,si)){
    const startedAt=Date.now(), endsAt=startedAt+ex.target.restSec*1000;
    s.restStartedAt=startedAt;s.restEndsAt=endsAt;
    w.rest={exerciseName:ex.name,nextSet:Math.min(si+2,ex.sets.length),startedAt,endsAt};
@@ -68,7 +69,7 @@ export default function App(){
  }
  async function adjustRest(delta:number){if(!active?.rest)return;const w=structuredClone(active);w.rest!.endsAt=Math.max(Date.now(),w.rest!.endsAt+delta*1000);await persistActive(w)}
  async function skipRest(){if(!active)return;const w=structuredClone(active);w.rest=null;await persistActive(w)}
- async function pauseRest(){if(!active?.rest)return;const w=structuredClone(active);if(w.rest!.pausedRemaining){w.rest!.endsAt=Date.now()+w.rest!.pausedRemaining;delete w.rest!.pausedRemaining}else w.rest!.pausedRemaining=Math.max(0,w.rest!.endsAt-Date.now());await persistActive(w)}
+ async function pauseRest(){if(!active?.rest)return;const w=structuredClone(active);if(w.rest!.pausedRemaining!==undefined){w.rest!.endsAt=Date.now()+w.rest!.pausedRemaining;delete w.rest!.pausedRemaining;delete w.rest!.notifiedAt}else w.rest!.pausedRemaining=Math.max(0,w.rest!.endsAt-Date.now());await persistActive(w)}
  async function finishWorkout(){
   if(!active)return;const incomplete=active.exercises.flatMap(e=>e.sets).filter(s=>!s.completedAt).length;
   if(incomplete && !confirm(`${incomplete} niewykonanych serii. Zakończyć mimo to?`))return;
@@ -96,12 +97,15 @@ export default function App(){
  }
  async function exportCsv(){
   const rows=[["date","workout","exercise","set","kg","reps","rir","e1rm"]];
-  for(const w of workouts)for(const e of w.exercises)for(const s of e.sets)if(s.completedAt)rows.push([new Date(w.startedAt).toISOString(),w.name,e.name,String(s.setNo),String(s.weight??""),String(s.reps??""),String(s.rir??""),s.weight&&s.reps?e1rm(s.weight,s.reps).toFixed(2):""]);
+  for(const w of workouts)for(const e of w.exercises)for(const s of e.sets)if(s.completedAt){
+   const weight=toFiniteNumber(s.weight),reps=toFiniteNumber(s.reps);
+   rows.push([new Date(w.startedAt).toISOString(),w.name,e.name,String(s.setNo),String(weight??""),String(reps??""),String(toFiniteNumber(s.rir)??""),weight!==null&&reps!==null?e1rm(weight,reps).toFixed(2):""]);
+  }
   const csv=rows.map(r=>r.map(v=>`"${String(v).replaceAll('"','""')}"`).join(",")).join("\n");const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([csv],{type:"text/csv"}));a.download="gym-history.csv";a.click();URL.revokeObjectURL(a.href);
  }
- const restRemaining=active?.rest ? (active.rest.pausedRemaining??Math.max(0,active.rest.endsAt-now)) : 0;
+ const restRemaining=active?.rest ? (active.rest.pausedRemaining!==undefined?active.rest.pausedRemaining:Math.max(0,active.rest.endsAt-now)) : 0;
  return <div className="app">
-  <audio ref={audioRef} preload="auto" />
+  <audio ref={audioRef} preload="none" />
   <header className="topbar"><div><span className="eyebrow">GYM</span><h1>{active?active.name:tab==="train"?"Trening":tab==="history"?"Historia":tab==="progress"?"Progres":tab==="body"?"Ciało":"Więcej"}</h1></div>{active&&<button className="finish" onClick={finishWorkout}>Zakończ</button>}</header>
   <main>
    {tab==="train" && (active?<ActiveView active={active} now={now} previousSet={previousSet} setField={setField} completeSet={completeSet} discard={discard}/>:<TrainHome templates={templates} workouts={workouts} startWorkout={startWorkout}/>)}
@@ -110,7 +114,7 @@ export default function App(){
    {tab==="body"&&<Body body={body} addBody={addBody}/>}
    {tab==="more"&&<More settings={settings} setSettings={async s=>{await db.settings.put(s);setSettings(s)}} exportJson={exportJson} importJson={importJson} exportCsv={exportCsv}/>}
   </main>
-  {active?.rest&&<div className={"restbar "+(restRemaining<=0?"done":"")}><div><small>{restRemaining<=0?"PRZERWA ZAKOŃCZONA":active.rest.exerciseName+" • PRZERWA"}</small><strong>{restRemaining<=0?"Gotowy":fmtDuration(Math.ceil(restRemaining/1000))}</strong></div><div className="restactions"><button onClick={()=>adjustRest(-30)}>−30</button><button onClick={pauseRest}>{active.rest.pausedRemaining?"Wznów":"Pauza"}</button><button onClick={()=>adjustRest(30)}>+30</button><button onClick={skipRest}>Pomiń</button></div></div>}
+  {active?.rest&&<div className={"restbar "+(restRemaining<=0?"done":"")}><div><small>{restRemaining<=0?"PRZERWA ZAKOŃCZONA":active.rest.exerciseName+" • PRZERWA"}</small><strong>{restRemaining<=0?"Gotowy":fmtDuration(Math.ceil(restRemaining/1000))}</strong></div><div className="restactions"><button onClick={()=>adjustRest(-30)}>−30</button><button onClick={pauseRest}>{active.rest.pausedRemaining!==undefined?"Wznów":"Pauza"}</button><button onClick={()=>adjustRest(30)}>+30</button><button onClick={skipRest}>Pomiń</button></div></div>}
   {!active&&<nav className="bottom">{([["train","Trening"],["history","Historia"],["progress","Progres"],["body","Ciało"],["more","Więcej"]] as [Tab,string][]).map(([k,l])=><button key={k} className={tab===k?"active":""} onClick={()=>setTab(k)}>{l}</button>)}</nav>}
   {toast&&<div className="toast">{toast}</div>}
  </div>
@@ -120,7 +124,7 @@ function TrainHome({templates,workouts,startWorkout}:{templates:WorkoutTemplate[
  const last=workouts[0];return <section className="section"><div className="sectionhead"><h2>Co dzisiaj trenujesz?</h2>{last&&<p>Ostatnio: <b>{last.name}</b> · {fmtDate(last.startedAt)}</p>}</div><div className="templateList">{templates.map(t=><button className="templateRow" key={t.id} onClick={()=>startWorkout(t)}><span><b>{t.name}</b><small>{t.exercises.length} ćwiczeń</small></span><span>Rozpocznij</span></button>)}</div></section>
 }
 function ActiveView({active,now,previousSet,setField,completeSet,discard}:{active:ActiveWorkout;now:number;previousSet:(n:string,s:number)=>SetLog|null;setField:(e:number,s:number,f:"weight"|"reps"|"rir",v:string)=>void;completeSet:(e:number,s:number)=>void;discard:()=>void}){
- return <section className="workout"><div className="workoutMeta"><span>{fmtDuration(Math.floor((now-active.startedAt)/1000))}</span><button className="textbtn danger" onClick={discard}>Odrzuć</button></div>{active.exercises.map((ex,ei)=><article className="exercise" key={ex.templateExerciseId}><div className="exerciseHead"><div><h3>{ex.name}</h3><p>{ex.target.timed?"Maks. czas":`${ex.target.repMin}–${ex.target.repMax} powt.`} · RIR {ex.target.rir} · tempo {ex.target.tempo}</p></div><span>{Math.round(ex.target.restSec/30)/2} min</span></div><div className="setHeader"><span>Seria</span><span>Poprz.</span><span>kg</span><span>powt.</span><span>RIR</span><span></span></div>{ex.sets.map((s,si)=>{const p=previousSet(ex.name,s.setNo);return <div className={"setRow "+(s.completedAt?"complete":"")} key={s.id}><span>{s.setNo}</span><button className="prev" onClick={()=>p?.weight!=null&&setField(ei,si,"weight",String(p.weight))}>{p?.weight&&p?.reps?`${p.weight}×${p.reps}`:"—"}</button><input inputMode="decimal" value={s.weight??""} disabled={!!s.completedAt} onChange={e=>setField(ei,si,"weight",e.target.value)}/><input inputMode="numeric" value={s.reps??""} disabled={!!s.completedAt} onChange={e=>setField(ei,si,"reps",e.target.value)}/><input inputMode="decimal" value={s.rir??""} disabled={!!s.completedAt} onChange={e=>setField(ei,si,"rir",e.target.value)}/><button className="check" disabled={!!s.completedAt} onClick={()=>completeSet(ei,si)}>{s.completedAt?"✓":"○"}</button></div>})}</article>)}</section>
+ return <section className="workout"><div className="workoutMeta"><span>{fmtDuration(Math.floor((now-active.startedAt)/1000))}</span><button className="textbtn danger" onClick={discard}>Odrzuć</button></div>{active.exercises.map((ex,ei)=><article className="exercise" key={ex.templateExerciseId}><div className="exerciseHead"><div><h3>{ex.name}</h3><p>{ex.target.timed?"Maks. czas":`${ex.target.repMin}–${ex.target.repMax} powt.`} · RIR {ex.target.rir} · tempo {ex.target.tempo}</p></div><span>{Math.round(ex.target.restSec/30)/2} min</span></div><div className="setHeader"><span>Seria</span><span>Poprz.</span><span>kg</span><span>{ex.target.timed?"sek.":"powt."}</span><span>RIR</span><span></span></div>{ex.sets.map((s,si)=>{const p=previousSet(ex.name,s.setNo);return <div className={"setRow "+(s.completedAt?"complete":"")} key={s.id}><span>{s.setNo}</span><button className="prev" onClick={()=>p?.weight!=null&&setField(ei,si,"weight",String(p.weight))}>{p?.weight&&p?.reps?`${p.weight}×${p.reps}`:"—"}</button><input inputMode="decimal" aria-label={`Ciężar seria ${s.setNo}`} value={s.weight??""} disabled={!!s.completedAt} onChange={e=>setField(ei,si,"weight",e.target.value)}/><input inputMode="numeric" aria-label={`${ex.target.timed?"Czas w sekundach":"Powtórzenia"} seria ${s.setNo}`} value={s.reps??""} disabled={!!s.completedAt} onChange={e=>setField(ei,si,"reps",e.target.value)}/><input inputMode="decimal" aria-label={`RIR seria ${s.setNo}`} value={s.rir??""} disabled={!!s.completedAt} onChange={e=>setField(ei,si,"rir",e.target.value)}/><button className="check" disabled={!!s.completedAt} onClick={()=>completeSet(ei,si)}>{s.completedAt?"✓":"○"}</button></div>})}</article>)}</section>
 }
 function History({workouts}:{workouts:WorkoutHistory[]}){return <section className="section">{workouts.length===0?<Empty text="Brak zapisanych treningów."/>:<div className="historyList">{workouts.map(w=><details key={w.id} className="historyItem"><summary><div><b>{w.name}</b><span>{fmtDate(w.startedAt)}</span></div><div className="right"><b>{fmtDuration(Math.floor((w.endedAt-w.startedAt)/1000))}</b><span>{Math.round(volume(w)).toLocaleString("pl-PL")} kg</span></div></summary><div className="historyBody">{w.exercises.map(e=><div key={e.templateExerciseId}><h4>{e.name}</h4>{e.sets.filter(s=>s.completedAt).map(s=><p key={s.id}>{s.setNo}. {s.weight} kg × {s.reps}{s.rir!=null?` · RIR ${s.rir}`:""}</p>)}</div>)}</div></details>)}</div>}</section>}
 function Progress({workouts}:{workouts:WorkoutHistory[]}){
