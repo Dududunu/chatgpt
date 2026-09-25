@@ -20,7 +20,10 @@ export default function App(){
  const [body,setBody]=useState<BodyEntry[]>([]);
  const [now,setNow]=useState(Date.now());
  const [toast,setToast]=useState("");
- const audioRef=useRef<HTMLAudioElement|null>(null);\n const startingRef=useRef(false);\n const completingRef=useRef(new Set<string>());\n const lastRestNoticeRef=useRef("");
+ const audioRef=useRef<HTMLAudioElement|null>(null);
+ const startingRef=useRef(false);
+ const completingRef=useRef(new Set<string>());
+ const lastRestNoticeRef=useRef("");
 
  async function refresh(){
   setTemplates(await db.templates.toArray());
