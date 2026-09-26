@@ -32,7 +32,8 @@ All movement previews below are original inline SVG line drawings authored for t
 
 ## Third-party source review
 
-- ExerciseDB repository: [ExerciseDB/exercisedb-api](https://github.com/ExerciseDB/exercisedb-api). Its README describes an API containing images, videos, and GIFs and links to separate [terms of use](https://dub.sh/exercisedb-api-tos). The repository's `AGPL-3.0` license covers repository code; it does not by itself verify the usage rights for each media item in the exercise dataset. No ExerciseDB media was downloaded or redistributed.
-- AscendAPI: no asset was selected from it, so the app does not depend on its API, terms, or uptime.
+- ExerciseDB repository: [ExerciseDB/exercisedb-api](https://github.com/ExerciseDB/exercisedb-api). Its README describes an API containing images, videos, and GIFs. The repository's `AGPL-3.0` license covers repository code; it does not by itself grant rights to redistribute each dataset media item.
+- Official [ExerciseDB API Terms of Use](https://exercisedb.notion.site/ExerciseDB-API-Terms-of-Use-226983b728ca8090bf7be79564e4b356) state that content served by the API, including GIFs and videos, is AscendAPI's property. The terms grant a revocable subscriber license and prohibit storing API media on devices or in persistent storage, and prohibit cache storage beyond temporary operation (up to one hour). Packaging those media for this offline PWA would conflict with those restrictions, so no ExerciseDB/AscendAPI media or instructions were copied.
+- [AscendAPI's official site](https://ascendapi.com/) identifies the service as formerly ExerciseDB. No runtime API dependency or remote media URL is used by the app.
 
 For an unmapped exercise added later, the UI displays `BRAK PODGLĄDU RUCHU` instead of a broken image.
