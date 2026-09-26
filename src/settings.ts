@@ -10,7 +10,9 @@ const defaults:Settings={
  hideMotion:false,
  showExerciseImages:true,
  defaultRir:"2",
- defaultIncrement:2.5
+ defaultIncrement:2.5,
+ prefillPreviousWeight:false,
+ keepScreenAwake:true
 };
 
 /** Adds settings introduced by later app versions while preserving stored preferences. */
@@ -22,6 +24,8 @@ export function normalizeSettings(value:Partial<Settings>|null|undefined):Settin
   hideMotion:value?.hideMotion??defaults.hideMotion,
   showExerciseImages:value?.showExerciseImages??!(value?.hideMotion??defaults.hideMotion),
   defaultRir:value?.defaultRir??defaults.defaultRir,
-  defaultIncrement:value?.defaultIncrement??defaults.defaultIncrement
+  defaultIncrement:value?.defaultIncrement??defaults.defaultIncrement,
+  prefillPreviousWeight:value?.prefillPreviousWeight??defaults.prefillPreviousWeight,
+  keepScreenAwake:value?.keepScreenAwake??defaults.keepScreenAwake
  };
 }

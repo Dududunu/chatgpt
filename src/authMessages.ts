@@ -6,7 +6,9 @@ export function authErrorMessage(error:unknown):string{
  if(normalized.includes("invalid login")||normalized.includes("invalid_credentials")||normalized.includes("invalid email or password"))return "Nieprawidłowy email lub hasło.";
  if(normalized.includes("email not confirmed"))return "Potwierdź adres email i spróbuj ponownie.";
  if(normalized.includes("already registered")||normalized.includes("user already exists"))return "Konto z tym adresem email już istnieje.";
- if(normalized.includes("password should be")||normalized.includes("weak password"))return "Hasło musi zawierać co najmniej 6 znaków.";
+ if(normalized.includes("password should be")||normalized.includes("weak password"))return "Hasło musi zawierać co najmniej 8 znaków.";
+ if(normalized.includes("email rate limit")||normalized.includes("too many requests"))return "Za dużo prób. Odczekaj chwilę i spróbuj ponownie.";
+ if(normalized.includes("user not found"))return "Nie znaleziono konta z tym adresem email.";
  if(normalized.includes("fetch")||normalized.includes("network")||normalized.includes("timeout"))return "Brak połączenia. Sprawdź internet i spróbuj ponownie.";
  return "Nie udało się wykonać tej czynności. Spróbuj ponownie za chwilę.";
 }

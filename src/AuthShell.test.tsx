@@ -17,6 +17,7 @@ describe("account experience",()=>{
   const html=renderToStaticMarkup(createElement(AuthScreen,{initialMode:"signup"}));
   expect(html).toContain("Utwórz konto");
   expect(html).toContain("Zapisz plan, historię i progres");
+  expect(html).toContain("IMIĘ");
   expect(html).not.toContain("Supabase");
  });
 

@@ -1,5 +1,5 @@
 import { describe,expect,it } from "vitest";
-import { addTemplateExercise,createWorkoutSnapshot,createWorkoutTemplate,duplicateWorkoutTemplate,moveTemplateExercise,removeTemplateExercise,updateTemplateExercise,validateWorkoutTemplate } from "./planLogic";
+import { addTemplateExercise,createWorkoutSnapshot,createWorkoutTemplate,duplicateWorkoutTemplate,moveTemplateExercise,prefillPreviousWeights,removeTemplateExercise,updateTemplateExercise,validateWorkoutTemplate } from "./planLogic";
 import type { ExerciseTemplate,WorkoutTemplate } from "./types";
 
 const exercise=(id:string,name=id):ExerciseTemplate=>({id,name,sets:2,repMin:6,repMax:8,rir:"2",tempo:"2110",restSec:120});
@@ -41,5 +41,13 @@ describe("editable plans",()=>{
   const same=addTemplateExercise(template,exercise("press","duplicate"));
   expect(same.exercises).toHaveLength(2);
   expect(moveTemplateExercise(template,"missing",0)).toBe(template);
+ });
+
+ it("prefills only the previous loads and never completes the new sets",()=>{
+  const current=createWorkoutSnapshot({...template,exercises:[exercise("press","press")]},200,()=>"new");
+  const previous={id:"old",templateId:"upper",name:"UPPER 1",startedAt:100,endedAt:150,exercises:[{templateExerciseId:"press",name:"press",target:exercise("press","press"),sets:[{id:"p1",setNo:1,weight:"80",reps:8,rir:2,completedAt:120},{id:"p2",setNo:2,weight:"82.5",reps:6,rir:2,completedAt:130}]}]};
+  const filled=prefillPreviousWeights(current,previous,true);
+  expect(filled.exercises[0].sets.map(set=>set.weight)).toEqual([80,82.5]);
+  expect(filled.exercises[0].sets.every(set=>set.completedAt===null&&set.reps===null)).toBe(true);
  });
 });

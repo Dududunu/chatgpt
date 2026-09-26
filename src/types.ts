@@ -1,4 +1,6 @@
 export type NumericField=number|string|null;
+export type SyncFields={updatedAt?:number;deletedAt?:number};
+export type SetType="normal"|"warmup"|"drop"|"failure";
 
 export type ExerciseTemplate={
  id:string;
@@ -17,7 +19,7 @@ export type ExerciseTemplate={
  minIncrement?:number;
 };
 
-export type WorkoutTemplate={id:string;name:string;exercises:ExerciseTemplate[];createdAt?:number};
+export type WorkoutTemplate=SyncFields&{id:string;name:string;exercises:ExerciseTemplate[];createdAt?:number};
 
 export type SetLog={
  id:string;
@@ -26,6 +28,8 @@ export type SetLog={
  reps:NumericField;
  rir:NumericField;
  completedAt:number|null;
+ type?:SetType;
+ toFailure?:boolean;
  restStartedAt?:number;
  restEndsAt?:number;
 };
@@ -35,6 +39,7 @@ export type ExerciseLog={
  name:string;
  target:ExerciseTemplate;
  sets:SetLog[];
+ note?:string;
 };
 
 export type RestState={
@@ -51,7 +56,7 @@ export type RestState={
  notifiedAt?:number;
 };
 
-export type ActiveWorkout={
+export type ActiveWorkout=SyncFields&{
  id:string;
  templateId:string;
  name:string;
@@ -60,11 +65,13 @@ export type ActiveWorkout={
  /** Stable exercise identity for restoring the active screen if plan order changes. */
  currentExerciseId?:string;
  rest?:RestState|null;
+ /** Exercise set-count edits are intentionally applied to the plan only after user confirmation. */
+ planSetChanges?:string[];
 };
 
 export type WorkoutHistory=ActiveWorkout&{endedAt:number};
 
-export type BodyEntry={
+export type BodyEntry=SyncFields&{
  id:string;
  date:number;
  weight?:number;
@@ -74,7 +81,7 @@ export type BodyEntry={
  note?:string;
 };
 
-export type Settings={
+export type Settings=SyncFields&{
  id:"main";
  defaultRestSec:number;
  autoRest:boolean;
@@ -85,4 +92,15 @@ export type Settings={
  showExerciseImages?:boolean;
  defaultRir?:string;
  defaultIncrement?:number;
+ prefillPreviousWeight?:boolean;
+ keepScreenAwake?:boolean;
+};
+
+export type SyncMeta={
+ id:"main";
+ userId?:string;
+ activeDeletedAt?:number;
+ displayName?:string;
+ profileUpdatedAt?:number;
+ legacyMigratedAt?:number;
 };

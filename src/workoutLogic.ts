@@ -1,4 +1,4 @@
-import type { ActiveWorkout, ExerciseTemplate, NumericField, RestState, SetLog } from "./types";
+import type { ActiveWorkout, ExerciseTemplate, NumericField, RestState, SetLog, SetType } from "./types";
 
 export function toFiniteNumber(value:NumericField):number|null{
  if(typeof value==="number") return Number.isFinite(value)?value:null;
@@ -68,6 +68,29 @@ export function navigateWorkoutExercise(workout:ActiveWorkout,direction:-1|1):Ac
 
 export function firstIncompleteSetIndex(exercise:{sets:SetLog[]}):number{
  return exercise.sets.findIndex(set=>!set.completedAt);
+}
+
+export function addWorkoutSet(workout:ActiveWorkout,exerciseId:string,idFactory:()=>string):ActiveWorkout{
+ const exercise=workout.exercises.find(item=>item.templateExerciseId===exerciseId);
+ if(!exercise||exercise.sets.length>=30)return workout;
+ const setNo=Math.max(0,...exercise.sets.map(set=>set.setNo))+1;
+ const nextSet:SetLog={id:idFactory(),setNo,weight:null,reps:null,rir:null,completedAt:null,type:"normal"};
+ const changes=new Set(workout.planSetChanges??[]);changes.add(exerciseId);
+ return {...workout,planSetChanges:[...changes],exercises:workout.exercises.map(item=>item===exercise?{...item,sets:[...item.sets,nextSet]}:item)};
+}
+
+export function removeWorkoutSet(workout:ActiveWorkout,exerciseId:string,setId:string):ActiveWorkout{
+ const exercise=workout.exercises.find(item=>item.templateExerciseId===exerciseId);
+ if(!exercise||!exercise.sets.some(set=>set.id===setId))return workout;
+ const changes=new Set(workout.planSetChanges??[]);changes.add(exerciseId);
+ return {...workout,planSetChanges:[...changes],exercises:workout.exercises.map(item=>item!==exercise?item:{...item,sets:item.sets.filter(set=>set.id!==setId).map((set,index)=>({...set,setNo:index+1}))})};
+}
+
+export function setWorkoutSetType(workout:ActiveWorkout,exerciseId:string,setId:string,type:SetType):ActiveWorkout{
+ return {...workout,exercises:workout.exercises.map(exercise=>exercise.templateExerciseId!==exerciseId?exercise:{
+  ...exercise,
+  sets:exercise.sets.map(set=>set.id!==setId?set:{...set,type,toFailure:type==="failure"})
+ })};
 }
 
 export function nextRestTarget(workout:ActiveWorkout,exerciseIndex:number,setIndex:number):{exerciseId:string;exerciseName:string;setNo:number}|null{

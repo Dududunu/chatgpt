@@ -1,21 +1,46 @@
 import { useState } from "react";
 import type { BodyEntry, Settings } from "./types";
 import { syncStatusMessage } from "./authMessages";
+import { validateDeleteConfirmation, validateDisplayName, validatePasswordChange } from "./accountLogic";
 
-type Props={settings:Settings|null;body:BodyEntry[];accountEmail:string;syncStatus:"syncing"|"synced"|"offline"|"error";onSyncNow:()=>Promise<void>;onSignOut:()=>Promise<void>;onSaveSettings:(patch:Partial<Settings>)=>Promise<void>;onAddBody:(entry:BodyEntry)=>Promise<void>;exportJson:()=>Promise<void>;importJson:(file:File)=>Promise<void>;exportCsv:()=>Promise<void>;notify:(message:string)=>void};
+type Props={settings:Settings|null;body:BodyEntry[];accountEmail:string;displayName:string;syncStatus:"syncing"|"synced"|"offline"|"error";onSyncNow:()=>Promise<void>;onSignOut:()=>Promise<void>;onUpdateDisplayName:(name:string)=>Promise<void>;onChangePassword:(current:string,next:string)=>Promise<void>;onDeleteAccount:(confirmation:string)=>Promise<void>;onSaveSettings:(patch:Partial<Settings>)=>Promise<void>;onAddBody:(entry:BodyEntry)=>Promise<void>;exportJson:()=>Promise<void>;importJson:(file:File)=>Promise<void>;exportCsv:()=>Promise<void>;notify:(message:string)=>void};
 const id=()=>crypto.randomUUID();
 const date=(time:number)=>new Intl.DateTimeFormat("pl-PL",{day:"numeric",month:"short",year:"numeric"}).format(time);
 const parse=(raw:string)=>{if(!raw.trim())return null;const value=Number(raw.trim().replace(",","."));return Number.isFinite(value)&&value>=0?value:null};
 
-export function MoreScreen({settings,body,accountEmail,syncStatus,onSyncNow,onSignOut,onSaveSettings,onAddBody,exportJson,importJson,exportCsv,notify}:Props){
+export function MoreScreen({settings,body,accountEmail,displayName,syncStatus,onSyncNow,onSignOut,onUpdateDisplayName,onChangePassword,onDeleteAccount,onSaveSettings,onAddBody,exportJson,importJson,exportCsv,notify}:Props){
  const [weight,setWeight]=useState("");
  const [waist,setWaist]=useState("");
  const [chest,setChest]=useState("");
  const [arm,setArm]=useState("");
  const [note,setNote]=useState("");
  const [saving,setSaving]=useState(false);
+ const [editingName,setEditingName]=useState(false);
+ const [nameDraft,setNameDraft]=useState(displayName);
+ const [nameBusy,setNameBusy]=useState(false);
+ const [passwordOpen,setPasswordOpen]=useState(false);
+ const [currentPassword,setCurrentPassword]=useState("");
+ const [newPassword,setNewPassword]=useState("");
+ const [repeatPassword,setRepeatPassword]=useState("");
+ const [passwordBusy,setPasswordBusy]=useState(false);
+ const [deleteOpen,setDeleteOpen]=useState(false);
+ const [deleteText,setDeleteText]=useState("");
+ const [deleteBusy,setDeleteBusy]=useState(false);
  if(!settings)return <section className="section"><p className="muted">Wczytywanie ustawień…</p></section>;
  async function update(patch:Partial<Settings>){await onSaveSettings(patch)}
+ async function saveName(event:React.FormEvent){
+  event.preventDefault();const validation=validateDisplayName(nameDraft);if(validation){notify(validation);return}
+  setNameBusy(true);try{await onUpdateDisplayName(nameDraft);setEditingName(false);notify("Imię zaktualizowane")}catch(error){notify(error instanceof Error?error.message:"Nie udało się zapisać imienia.")}finally{setNameBusy(false)}
+ }
+ async function savePassword(event:React.FormEvent){
+  event.preventDefault();const validation=validatePasswordChange(currentPassword,newPassword,repeatPassword);if(validation){notify(validation);return}
+  setPasswordBusy(true);try{await onChangePassword(currentPassword,newPassword);setCurrentPassword("");setNewPassword("");setRepeatPassword("");setPasswordOpen(false);notify("Hasło zmienione")}catch(error){notify(error instanceof Error?error.message:"Nie udało się zmienić hasła.")}finally{setPasswordBusy(false)}
+ }
+ async function removeAccount(){
+  if(!validateDeleteConfirmation(deleteText)){notify("Wpisz USUŃ, aby potwierdzić");return}
+  if(!window.confirm("To trwale usunie konto i dane w chmurze. Czy na pewno kontynuować?"))return;
+  setDeleteBusy(true);try{await onDeleteAccount(deleteText)}catch(error){notify(error instanceof Error?error.message:"Nie udało się usunąć konta.");setDeleteBusy(false)}
+ }
  async function saveBody(event:React.FormEvent){
   event.preventDefault();const parsed={weight:parse(weight),waist:parse(waist),chest:parse(chest),arm:parse(arm)};
   if(Object.values(parsed).every(value=>value===null)&&!note.trim()){notify("Wpisz przynajmniej jeden pomiar");return}
@@ -26,7 +51,10 @@ export function MoreScreen({settings,body,accountEmail,syncStatus,onSyncNow,onSi
  return <section className="section more-screen">
   <div className="section-heading"><div><h2>Więcej</h2><p>Ustawienia, pomiary i kopie danych.</p></div></div>
   <section className="settings-section account-section"><h3>Konto</h3>
-   <div className="account-row"><span><b>{accountEmail}</b><small>{syncStatusMessage(syncStatus)}</small></span><span className={`sync-dot ${syncStatus}`} aria-hidden="true"/></div>
+   <div className="account-row"><span><b>{displayName||"Twoje konto"}</b><small>{accountEmail}</small><small>{syncStatusMessage(syncStatus)}</small></span><span className={`sync-dot ${syncStatus}`} aria-hidden="true"/></div>
+   {!editingName?<button className="data-action" onClick={()=>{setNameDraft(displayName);setEditingName(true)}}>Zmień imię <span>›</span></button>:<form className="account-inline-form" onSubmit={saveName}><label className="field-label">IMIĘ<input autoFocus minLength={2} maxLength={30} value={nameDraft} onChange={event=>setNameDraft(event.target.value)}/></label><button className="primary compact" disabled={nameBusy}>Zapisz</button><button type="button" className="quiet-button" onClick={()=>setEditingName(false)}>Anuluj</button></form>}
+   {!passwordOpen?<button className="data-action" onClick={()=>setPasswordOpen(true)}>Zmień hasło <span>›</span></button>:<form className="account-inline-form" onSubmit={savePassword}><label className="field-label">OBECNE HASŁO<input type="password" autoComplete="current-password" required value={currentPassword} onChange={event=>setCurrentPassword(event.target.value)}/></label><label className="field-label">NOWE HASŁO<input type="password" autoComplete="new-password" minLength={8} required value={newPassword} onChange={event=>setNewPassword(event.target.value)}/></label><label className="field-label">POWTÓRZ NOWE HASŁO<input type="password" autoComplete="new-password" minLength={8} required value={repeatPassword} onChange={event=>setRepeatPassword(event.target.value)}/></label><button className="primary compact" disabled={passwordBusy}>Zapisz nowe hasło</button><button type="button" className="quiet-button" onClick={()=>setPasswordOpen(false)}>Anuluj</button></form>}
+   {!deleteOpen?<button className="data-action danger-text" onClick={()=>setDeleteOpen(true)}>Usuń konto <span>›</span></button>:<div className="delete-account-panel"><p>Usunięcie konta i danych treningowych z chmury jest trwałe.</p><label className="field-label">WPISZ USUŃ<input value={deleteText} onChange={event=>setDeleteText(event.target.value)} autoComplete="off"/></label><button className="quiet-button danger-text" disabled={!validateDeleteConfirmation(deleteText)||deleteBusy} onClick={()=>void removeAccount()}>{deleteBusy?"Usuwanie…":"Usuń konto trwale"}</button><button className="quiet-button" onClick={()=>{setDeleteOpen(false);setDeleteText("")}}>Anuluj</button></div>}
    <button className="data-action" disabled={syncStatus==="offline"} onClick={()=>void onSyncNow()}>Synchronizuj <span>›</span></button>
    <button className="data-action danger-text" onClick={()=>void onSignOut().catch(()=>notify("Nie udało się wylogować. Spróbuj ponownie."))}>Wyloguj <span>›</span></button>
   </section>
@@ -38,6 +66,8 @@ export function MoreScreen({settings,body,accountEmail,syncStatus,onSyncNow,onSi
    <Toggle label="Dźwięk po przerwie" checked={settings.sound} onChange={sound=>void update({sound})}/>
    <Toggle label="Wibracja po przerwie" checked={settings.vibration} onChange={vibration=>void update({vibration})}/>
    <Toggle label="Pokaż grafiki ćwiczeń" checked={settings.showExerciseImages??true} onChange={showExerciseImages=>void update({showExerciseImages})}/>
+   <Toggle label="Wstępnie wpisuj poprzedni ciężar" checked={settings.prefillPreviousWeight??false} onChange={prefillPreviousWeight=>void update({prefillPreviousWeight})}/>
+   <Toggle label="Nie wygaszaj ekranu podczas treningu" checked={settings.keepScreenAwake??true} onChange={keepScreenAwake=>void update({keepScreenAwake})}/>
   </section>
   <section className="settings-section"><h3>Wygląd</h3><label className="setting-row"><span><b>Motyw</b></span><select value={settings.theme} onChange={event=>void update({theme:event.target.value as Settings["theme"]})}><option value="dark">Ciemny</option><option value="light">Jasny</option><option value="system">Systemowy</option></select></label></section>
   <section className="settings-section body-section"><h3>Pomiary ciała</h3><form className="body-form" onSubmit={saveBody}>

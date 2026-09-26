@@ -71,4 +71,13 @@ describe("strength statistics",()=>{
   expect(bestE1rm([w],"X")).toBe(0);
   expect(actual1rm([w],"X")).toBe(0);
  });
+
+ it("counts drop sets in volume but excludes warm-ups and drop sets from primary PRs",()=>{
+  const w=workout([set("20","10",10),set("50","8",11),set("45","10",12)]);
+  w.exercises[0].sets[0].type="warmup";
+  w.exercises[0].sets[1].type="normal";
+  w.exercises[0].sets[2].type="drop";
+  expect(volume(w)).toBe(850);
+  expect(bestE1rm([w],"X")).toBeCloseTo(e1rm(50,8),5);
+ });
 });

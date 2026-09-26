@@ -4,7 +4,7 @@ import { normalizeSettings } from "./settings";
 describe("IndexedDB settings migration",()=>{
  it("fills fields missing from older records and keeps existing preferences",()=>{
   expect(normalizeSettings({id:"main",defaultRestSec:150,autoRest:false,sound:false,vibration:true,theme:"light"})).toEqual({
-   id:"main",defaultRestSec:150,autoRest:false,sound:false,vibration:true,theme:"light",hideMotion:false,showExerciseImages:true,defaultRir:"2",defaultIncrement:2.5
+   id:"main",defaultRestSec:150,autoRest:false,sound:false,vibration:true,theme:"light",hideMotion:false,showExerciseImages:true,defaultRir:"2",defaultIncrement:2.5,prefillPreviousWeight:false,keepScreenAwake:true
   });
  });
  it("provides defaults when an old backup has no settings record",()=>{

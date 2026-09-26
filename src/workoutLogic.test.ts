@@ -1,5 +1,5 @@
 import { describe,expect,it } from "vitest";
-import { adjustRestTimer, currentExerciseIndex, firstIncompleteSetIndex, isRestNotificationDue, navigateWorkoutExercise, nextExerciseAfterCompletedSet, nextRestTarget, normalizeSetForCompletion, restoreActiveWorkout, shouldStartRest, toFiniteNumber, toggleRestPause } from "./workoutLogic";
+import { addWorkoutSet, adjustRestTimer, currentExerciseIndex, firstIncompleteSetIndex, isRestNotificationDue, navigateWorkoutExercise, nextExerciseAfterCompletedSet, nextRestTarget, normalizeSetForCompletion, removeWorkoutSet, restoreActiveWorkout, setWorkoutSetType, shouldStartRest, toFiniteNumber, toggleRestPause } from "./workoutLogic";
 import type { ActiveWorkout, ExerciseTemplate, RestState } from "./types";
 
 const normal:ExerciseTemplate={id:"x",name:"X",sets:2,repMin:6,repMax:8,rir:"2",tempo:"2110",restSec:120};
@@ -151,5 +151,24 @@ describe("rest timer controls",()=>{
   expect(resumed.pausedRemaining).toBeUndefined();
   expect(resumed.notifiedAt).toBe(31_000);
   expect(isRestNotificationDue(resumed,31_000)).toBe(false);
+ });
+});
+
+describe("session-only set editing",()=>{
+ const workout:ActiveWorkout={id:"w",templateId:"t",name:"T",startedAt:1,exercises:[{templateExerciseId:"A",name:"A",target:normal,sets:[{id:"s1",setNo:1,weight:30,reps:8,rir:2,completedAt:10},{id:"s2",setNo:2,weight:null,reps:null,rir:null,completedAt:null}]}]};
+ it("adds a working set to the snapshot without changing its target",()=>{
+  const original=structuredClone(workout),updated=addWorkoutSet(original,"A",()=>"new-set");
+  expect(updated.exercises[0].sets).toHaveLength(3);expect(updated.exercises[0].sets.at(-1)).toMatchObject({id:"new-set",setNo:3,type:"normal",completedAt:null});
+  expect(updated.exercises[0].target.sets).toBe(2);expect(original.exercises[0].sets).toHaveLength(2);expect(updated.planSetChanges).toContain("A");
+ });
+ it("removes a session set without changing the source snapshot",()=>{
+  const original=structuredClone(workout),updated=removeWorkoutSet(original,"A","s1");
+  expect(updated.exercises[0].sets.map(set=>set.setNo)).toEqual([1]);expect(updated.exercises[0].sets[0].id).toBe("s2");
+  expect(original.exercises[0].sets).toHaveLength(2);expect(updated.planSetChanges).toContain("A");
+ });
+ it("sets failure metadata without overwriting a manually entered RIR",()=>{
+  const original=structuredClone(workout);original.exercises[0].sets[0].rir="3";
+  const updated=setWorkoutSetType(original,"A","s1","failure");
+  expect(updated.exercises[0].sets[0]).toMatchObject({type:"failure",toFailure:true,rir:"3"});
  });
 });

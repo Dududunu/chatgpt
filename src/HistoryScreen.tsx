@@ -1,16 +1,20 @@
 import { useMemo, useState } from "react";
 import { volume } from "./stats";
 import { normalizeSetForCompletion } from "./workoutLogic";
-import type { ExerciseTemplate, SetLog, WorkoutHistory } from "./types";
+import type { BodyEntry, ExerciseTemplate, SetLog, WorkoutHistory } from "./types";
+import { calendarMonthCells,groupWorkoutsByDay,localDateKey,measurementsForCalendarDay,moveCalendarMonth,workoutsForCalendarDay } from "./historyCalendar";
 
-type Props={workouts:WorkoutHistory[];catalog:ExerciseTemplate[];onSave:(workout:WorkoutHistory)=>Promise<void>;notify:(message:string)=>void};
+type Props={workouts:WorkoutHistory[];body:BodyEntry[];catalog:ExerciseTemplate[];onSave:(workout:WorkoutHistory)=>Promise<void>;notify:(message:string)=>void};
 const duration=(seconds:number)=>{const h=Math.floor(seconds/3600),m=Math.floor(seconds%3600/60),s=seconds%60;return h?`${h}:${String(m).padStart(2,"0")}:${String(s).padStart(2,"0")}`:`${m}:${String(s).padStart(2,"0")}`};
 const date=(timestamp:number)=>new Intl.DateTimeFormat("pl-PL",{day:"numeric",month:"short",year:"numeric"}).format(timestamp);
 const dateTimeValue=(timestamp:number)=>{const d=new Date(timestamp);return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}T${String(d.getHours()).padStart(2,"0")}:${String(d.getMinutes()).padStart(2,"0")}`};
 
-export function HistoryScreen({workouts,catalog,onSave,notify}:Props){
+export function HistoryScreen({workouts,body,catalog,onSave,notify}:Props){
  const [selectedId,setSelectedId]=useState<string|null>(null);
  const [editing,setEditing]=useState(false);
+ const [view,setView]=useState<"list"|"calendar">("list");
+ const [month,setMonth]=useState(()=>{const now=new Date();return new Date(now.getFullYear(),now.getMonth(),1)});
+ const [selectedDay,setSelectedDay]=useState(()=>localDateKey(Date.now()));
  const selected=workouts.find(workout=>workout.id===selectedId)||null;
  if(selected){
   const completed=selected.exercises.reduce((count,exercise)=>count+exercise.sets.filter(set=>set.completedAt).length,0);
@@ -24,15 +28,36 @@ export function HistoryScreen({workouts,catalog,onSave,notify}:Props){
    </>}
   </section>;
  }
+ const grouped=groupWorkoutsByDay(workouts);
+ const selectedWorkouts=workoutsForCalendarDay(selectedDay,grouped);
+ const selectedMeasurements=measurementsForCalendarDay(selectedDay,body);
+ const cells=calendarMonthCells(month,workouts,body);
+ const monthLabel=new Intl.DateTimeFormat("pl-PL",{month:"long",year:"numeric"}).format(month);
  return <section className="section history-screen">
   <div className="section-heading"><div><h2>Historia</h2><p>Każdy trening zachowuje własny snapshot planu.</p></div></div>
-  {!workouts.length?<p className="empty-state">Nie masz jeszcze treningów. Zakończony trening pojawi się tutaj.</p>:<div className="history-list">{workouts.map(workout=>{
+  <div className="history-view-toggle" role="group" aria-label="Widok historii"><button className={view==="list"?"selected":""} aria-pressed={view==="list"} onClick={()=>setView("list")}>Lista</button><button className={view==="calendar"?"selected":""} aria-pressed={view==="calendar"} onClick={()=>setView("calendar")}>Kalendarz</button></div>
+  {!workouts.length&&!body.length?<p className="empty-state">Nie masz jeszcze treningów. Zakończony trening pojawi się tutaj.</p>:view==="calendar"?<div className="history-calendar">
+   <div className="calendar-header"><button className="quiet-button" aria-label="Poprzedni miesiąc" onClick={()=>setMonth(current=>moveCalendarMonth(current,-1))}>←</button><h3>{capitalize(monthLabel)}</h3><button className="quiet-button" aria-label="Następny miesiąc" onClick={()=>setMonth(current=>moveCalendarMonth(current,1))}>→</button><button className="calendar-today" onClick={()=>{const now=new Date();setMonth(new Date(now.getFullYear(),now.getMonth(),1));setSelectedDay(localDateKey(now.getTime()))}}>Dzisiaj</button></div>
+   <div className="calendar-weekdays" aria-hidden="true">{["Pn","Wt","Śr","Cz","Pt","So","Nd"].map(day=><span key={day}>{day}</span>)}</div>
+   <div className="calendar-grid">{cells.map(cell=>cell.inMonth?<button key={cell.key} className={`calendar-day ${selectedDay===cell.key?"selected":""}`} aria-label={`${cell.day} ${monthLabel}${cell.hasWorkout?", trening":""}${cell.hasMeasurement?", pomiar masy":""}`} aria-pressed={selectedDay===cell.key} onClick={()=>setSelectedDay(cell.key)}><span>{cell.day}</span><span className="calendar-markers">{cell.hasWorkout&&<i className="workout-marker" aria-label="Trening"/>}{cell.hasMeasurement&&<i className="measurement-marker" aria-label="Pomiar masy"/>}</span></button>:<span className="calendar-day empty" key={cell.key}/>)}</div>
+   <p className="calendar-legend"><span><i className="workout-marker"/> Trening</span><span><i className="measurement-marker"/> Pomiar masy</span></p>
+   <section className="calendar-day-detail"><h3>{new Intl.DateTimeFormat("pl-PL",{day:"numeric",month:"long"}).format(new Date(`${selectedDay}T12:00:00`))}</h3>
+    {selectedMeasurements.filter(entry=>entry.weight!=null).map(entry=><p className="calendar-measurement" key={entry.id}>Masa ciała · <b>{entry.weight} kg</b></p>)}
+    {selectedWorkouts.length?selectedWorkouts.map(workout=>{
+     const completed=workout.exercises.reduce((count,exercise)=>count+exercise.sets.filter(set=>set.completedAt).length,0);
+     const seconds=Math.max(0,Math.floor((workout.endedAt-workout.startedAt)/1000));
+     return <button className="history-item" key={workout.id} onClick={()=>setSelectedId(workout.id)}><span className="history-item-main"><b>{workout.name}</b><small>{completed} serii · {Math.round(volume(workout)).toLocaleString("pl-PL")} kg</small></span><span className="history-summary-meta"><b>{duration(seconds)}</b></span><span className="history-chevron" aria-hidden="true">›</span></button>;
+    }):selectedMeasurements.length===0&&<p className="calendar-no-workout">Brak treningu tego dnia.</p>}
+   </section>
+  </div>:<div className="history-list">{workouts.map(workout=>{
    const completed=workout.exercises.reduce((count,exercise)=>count+exercise.sets.filter(set=>set.completedAt).length,0);
    const seconds=Math.max(0,Math.floor((workout.endedAt-workout.startedAt)/1000));
    return <button className="history-item" key={workout.id} onClick={()=>setSelectedId(workout.id)}><span className="history-item-main"><b>{workout.name}</b><small>{date(workout.startedAt)}</small></span><span className="history-summary-meta"><b>{duration(seconds)}</b><small>{completed} serii · {Math.round(volume(workout)).toLocaleString("pl-PL")} kg</small></span><span className="history-chevron" aria-hidden="true">›</span></button>;
   })}</div>}
  </section>;
 }
+
+function capitalize(value:string){return value.charAt(0).toLocaleUpperCase("pl-PL")+value.slice(1)}
 
 function HistoryEditor({workout,catalog,onCancel,onSave,notify}:{workout:WorkoutHistory;catalog:ExerciseTemplate[];onCancel:()=>void;onSave:(workout:WorkoutHistory)=>Promise<void>;notify:(message:string)=>void}){
  const [draft,setDraft]=useState<WorkoutHistory>(()=>structuredClone(workout));

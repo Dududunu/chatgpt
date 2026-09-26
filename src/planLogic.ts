@@ -1,4 +1,5 @@
-import type { ActiveWorkout, ExerciseTemplate, WorkoutTemplate } from "./types";
+import type { ActiveWorkout, ExerciseTemplate, WorkoutHistory, WorkoutTemplate } from "./types";
+import { toFiniteNumber } from "./workoutLogic";
 
 export type IdFactory=()=>string;
 
@@ -19,6 +20,21 @@ export function createWorkoutSnapshot(template:WorkoutTemplate,startedAt:number,
    }))
   }))
  };
+}
+
+export function prefillPreviousWeights(workout:ActiveWorkout,previous:WorkoutHistory|undefined,enabled:boolean):ActiveWorkout{
+ if(!enabled||!previous)return workout;
+ return {...workout,exercises:workout.exercises.map(exercise=>{
+  const old=previous.exercises.find(item=>item.templateExerciseId===exercise.templateExerciseId)||previous.exercises.find(item=>item.name===exercise.name);
+  if(!old)return exercise;
+  const completed=old.sets.filter(set=>set.completedAt).sort((a,b)=>a.setNo-b.setNo);
+  if(!completed.length)return exercise;
+  return {...exercise,sets:exercise.sets.map(set=>{
+   const matching=completed.find(item=>item.setNo===set.setNo)||completed.at(-1)!;
+   const weight=toFiniteNumber(matching.weight);
+   return weight===null||weight<0?set:{...set,weight};
+  })};
+ })};
 }
 
 export function createWorkoutTemplate(name:string,id:string,createdAt=Date.now()):WorkoutTemplate{

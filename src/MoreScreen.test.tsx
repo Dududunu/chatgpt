@@ -5,7 +5,7 @@ import { MoreScreen } from "./MoreScreen";
 import type { Settings } from "./types";
 
 const settings:Settings={id:"main",defaultRestSec:120,autoRest:true,sound:false,vibration:false,theme:"dark",showExerciseImages:true};
-const common={settings,body:[],accountEmail:"tester@example.invalid",onSyncNow:vi.fn(async()=>{}),onSignOut:vi.fn(async()=>{}),onSaveSettings:vi.fn(async()=>{}),onAddBody:vi.fn(async()=>{}),exportJson:vi.fn(async()=>{}),importJson:vi.fn(async()=>{}),exportCsv:vi.fn(async()=>{}),notify:vi.fn()};
+const common={settings,body:[],accountEmail:"tester@example.invalid",displayName:"Dominik",onSyncNow:vi.fn(async()=>{}),onSignOut:vi.fn(async()=>{}),onUpdateDisplayName:vi.fn(async()=>{}),onChangePassword:vi.fn(async()=>{}),onDeleteAccount:vi.fn(async()=>{}),onSaveSettings:vi.fn(async()=>{}),onAddBody:vi.fn(async()=>{}),exportJson:vi.fn(async()=>{}),importJson:vi.fn(async()=>{}),exportCsv:vi.fn(async()=>{}),notify:vi.fn()};
 
 describe("account and settings screen",()=>{
  it("explains offline sync in plain language and keeps sign-out visible",()=>{
