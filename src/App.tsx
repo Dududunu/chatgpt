@@ -1,16 +1,25 @@
-import { useEffect, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { db } from "./db";
-import type { ActiveWorkout, BodyEntry, SetLog, Settings, WorkoutHistory, WorkoutTemplate } from "./types";
+import type { ActiveWorkout, BodyEntry, RestState, SetLog, Settings, WorkoutHistory, WorkoutTemplate } from "./types";
 import { actual1rm, bestE1rm, e1rm, volume } from "./stats";
-import { adjustRestTimer, currentExerciseIndex, firstIncompleteSetIndex, isRestNotificationDue, navigateWorkoutExercise, nextExerciseAfterCompletedSet, normalizeSetForCompletion, restoreActiveWorkout, shouldStartRest, toFiniteNumber, toggleRestPause } from "./workoutLogic";
-import { exerciseSubstitutions } from "./seed";
+import { adjustRestTimer, currentExerciseIndex, firstIncompleteSetIndex, isRestNotificationDue, navigateWorkoutExercise, nextExerciseAfterCompletedSet, nextRestTarget, normalizeSetForCompletion, restoreActiveWorkout, toFiniteNumber, toggleRestPause } from "./workoutLogic";
+import { createWorkoutSnapshot } from "./planLogic";
+import { defaultTemplates } from "./seed";
 import { ExerciseMotion } from "./ExerciseMotion";
+const PlanScreen=lazy(()=>import("./PlanScreen").then(module=>({default:module.PlanScreen})));
+const HistoryScreen=lazy(()=>import("./HistoryScreen").then(module=>({default:module.HistoryScreen})));
+const ProgressScreen=lazy(()=>import("./ProgressScreen").then(module=>({default:module.ProgressScreen})));
+const MoreScreen=lazy(()=>import("./MoreScreen").then(module=>({default:module.MoreScreen})));
+const TimerScreen=lazy(()=>import("./TimerScreen").then(module=>({default:module.TimerScreen})));
+import { normalizeSettings } from "./settings";
 
-type Tab="train"|"history"|"progress"|"body"|"more";
+type Tab="train"|"plan"|"history"|"progress"|"more";
+type Field="weight"|"reps"|"rir";
 const uid=()=>crypto.randomUUID();
-const fmtDuration=(sec:number)=>{const h=Math.floor(sec/3600),m=Math.floor((sec%3600)/60),s=sec%60; return h?`${h}:${String(m).padStart(2,"0")}:${String(s).padStart(2,"0")}`:`${m}:${String(s).padStart(2,"0")}`};
-const fmtDate=(t:number)=>new Intl.DateTimeFormat("pl-PL",{day:"numeric",month:"short",year:"numeric"}).format(t);
-const parseNum=(v:string)=>{const n=Number(v.replace(",","."));return Number.isFinite(n)?n:null};
+const fmtDuration=(sec:number)=>{const h=Math.floor(sec/3600),m=Math.floor((sec%3600)/60),s=sec%60;return h?`${h}:${String(m).padStart(2,"0")}:${String(s).padStart(2,"0")}`:`${m}:${String(s).padStart(2,"0")}`};
+const fmtDate=(time:number)=>new Intl.DateTimeFormat("pl-PL",{day:"numeric",month:"long",year:"numeric"}).format(time);
+const parseNum=(value:string)=>{const normalized=value.trim().replace(",",".");if(!normalized)return null;const n=Number(normalized);return Number.isFinite(n)&&n>=0?n:null};
+const labels:Record<Tab,string>={train:"Trening",plan:"Plan",history:"Historia",progress:"Progres",more:"Więcej"};
 
 export default function App(){
  const [tab,setTab]=useState<Tab>("train");
@@ -21,195 +30,312 @@ export default function App(){
  const [body,setBody]=useState<BodyEntry[]>([]);
  const [now,setNow]=useState(Date.now());
  const [toast,setToast]=useState("");
- const audioRef=useRef<HTMLAudioElement|null>(null);
+ const [timerOpen,setTimerOpen]=useState(false);
+ const [manualTimerOpen,setManualTimerOpen]=useState(false);
+ const audioContextRef=useRef<AudioContext|null>(null);
  const startingRef=useRef(false);
+ const finishingRef=useRef(false);
  const completingRef=useRef(new Set<string>());
- const completedSetRef=useRef(new Set<string>());
  const lastRestNoticeRef=useRef("");
 
  async function refresh(){
-  setTemplates(await db.templates.toArray());
-  setWorkouts(await db.workouts.orderBy("startedAt").reverse().toArray());
-  const storedActive=(await db.active.toArray())[0]||null;
-  const restoredActive=storedActive?restoreActiveWorkout(storedActive):null;
-  if(storedActive&&restoredActive&&restoredActive!==storedActive) await db.active.put(restoredActive);
-  setActive(restoredActive);
-  setSettings((await db.settings.get("main"))||null);
-  setBody(await db.body.orderBy("date").reverse().toArray());
+  const [templateRows,workoutRows,activeRows,storedSettings,bodyRows]=await Promise.all([
+   db.templates.toArray(),db.workouts.orderBy("startedAt").reverse().toArray(),db.active.toArray(),db.settings.get("main"),db.body.orderBy("date").reverse().toArray()
+  ]);
+  let storedActive=activeRows[0]||null;
+  if(storedActive){const restored=restoreActiveWorkout(storedActive);if(restored!==storedActive){await db.active.put(restored);storedActive=restored}}
+  setTemplates(templateRows);setWorkouts(workoutRows);setActive(storedActive);setSettings(storedSettings||null);setBody(bodyRows);
  }
- useEffect(()=>{refresh();const id=setInterval(()=>setNow(Date.now()),500);return()=>clearInterval(id)},[]);
+
+ useEffect(()=>{
+  const light=settings?.theme==="light"||(settings?.theme==="system"&&window.matchMedia("(prefers-color-scheme: light)").matches);
+  document.querySelector('meta[name="theme-color"]')?.setAttribute("content",light?"#f6f6f3":"#0b0c0b");
+ },[settings?.theme]);
+
+ useEffect(()=>{
+  void refresh();
+  const tick=window.setInterval(()=>setNow(Date.now()),500);
+  const onResume=()=>{if(!document.hidden)void refresh()};
+  window.addEventListener("focus",onResume);document.addEventListener("visibilitychange",onResume);
+  return()=>{window.clearInterval(tick);window.removeEventListener("focus",onResume);document.removeEventListener("visibilitychange",onResume)};
+ },[]);
+
+ function notify(message:string){setToast(message);window.setTimeout(()=>setToast(current=>current===message?"":current),2200)}
+ function unlockAudio(){
+  if(!settings?.sound)return;
+  try{audioContextRef.current??=new AudioContext();void audioContextRef.current.resume()}catch{}
+ }
+ function playChime(){
+  const context=audioContextRef.current;
+  if(!context)return;
+  void context.resume().then(()=>{
+   const oscillator=context.createOscillator(),gain=context.createGain();
+   oscillator.type="sine";oscillator.frequency.value=660;gain.gain.setValueAtTime(.001,context.currentTime);gain.gain.exponentialRampToValueAtTime(.16,context.currentTime+.025);gain.gain.exponentialRampToValueAtTime(.001,context.currentTime+.24);
+   oscillator.connect(gain);gain.connect(context.destination);oscillator.start();oscillator.stop(context.currentTime+.25);
+  }).catch(()=>{});
+ }
+
  useEffect(()=>{
   const rest=active?.rest;
-  if(!active || !rest || !isRestNotificationDue(rest,now)) return;
+  if(!active||!rest||!isRestNotificationDue(rest,now))return;
   const noticeKey=`${active.id}:${rest.startedAt}:${rest.endsAt}`;
-  if(lastRestNoticeRef.current===noticeKey) return;
+  if(lastRestNoticeRef.current===noticeKey)return;
   lastRestNoticeRef.current=noticeKey;
-  if(settings?.vibration && navigator.vibrate) navigator.vibrate([80,60,80]);
-  if(settings?.sound && audioRef.current?.src) audioRef.current.play().catch(()=>{});
-
-  const notifiedAt=Date.now();
   void db.transaction("rw",db.active,async()=>{
    const stored=await db.active.get(active.id);
-   if(!stored?.rest || stored.rest.startedAt!==rest.startedAt || stored.rest.endsAt!==rest.endsAt || stored.rest.notifiedAt!==undefined) return null;
-   stored.rest.notifiedAt=notifiedAt;
-   await db.active.put(stored);
-   return stored;
+   if(!stored?.rest||stored.rest.startedAt!==rest.startedAt||stored.rest.endsAt!==rest.endsAt||stored.rest.notifiedAt!==undefined)return null;
+   stored.rest.notifiedAt=Date.now();await db.active.put(stored);return stored;
   }).then(stored=>{
-   if(stored) setActive(current=>{
-    if(current?.id!==stored.id || current.rest?.startedAt!==rest.startedAt || current.rest.endsAt!==rest.endsAt) return current;
-    return {...current,rest:stored.rest};
-   });
-  }).catch(()=>{});
+   if(!stored)return;
+   setActive(current=>current?.id===stored.id?stored:current);
+   if(settings?.vibration&&navigator.vibrate)navigator.vibrate([70,70,70]);
+   if(settings?.sound)playChime();
+   notify("Przerwa zakończona");
+  }).catch(()=>{if(lastRestNoticeRef.current===noticeKey)lastRestNoticeRef.current=""});
  },[active?.id,active?.rest?.startedAt,active?.rest?.endsAt,active?.rest?.pausedRemaining,active?.rest?.notifiedAt,now,settings?.sound,settings?.vibration]);
 
- const notify=(s:string)=>{setToast(s);setTimeout(()=>setToast(""),2200)};
+ async function mutateActive(workoutId:string,update:(workout:ActiveWorkout)=>ActiveWorkout|null):Promise<ActiveWorkout|null>{
+  let result:ActiveWorkout|null=null;
+  await db.transaction("rw",db.active,async()=>{
+   const stored=await db.active.get(workoutId);if(!stored)return;
+   const next=update(structuredClone(stored));if(!next)return;
+   await db.active.put(next);result=next;
+  });
+  if(result)setActive(current=>current?.id===workoutId?result:current);
+  return result;
+ }
 
- async function startWorkout(t:WorkoutTemplate){
-  if(active || startingRef.current) return;
+ async function startWorkout(template:WorkoutTemplate){
+  if(active||startingRef.current)return;
   startingRef.current=true;
   try{
    const existing=(await db.active.toArray())[0];
-   if(existing){const restored=restoreActiveWorkout(existing);if(restored!==existing)await db.active.put(restored);setActive(restored);return;}
-   const w:ActiveWorkout={id:uid(),templateId:t.id,name:t.name,startedAt:Date.now(),currentExerciseId:t.exercises[0]?.id,rest:null,
-    exercises:t.exercises.map(ex=>({templateExerciseId:ex.id,name:ex.name,target:{...ex},sets:Array.from({length:ex.sets},(_,i)=>({id:uid(),setNo:i+1,weight:null,reps:null,rir:null,completedAt:null}))}))};
-   await db.active.put(w);setActive(w);
+   if(existing){const restored=restoreActiveWorkout(existing);if(restored!==existing)await db.active.put(restored);setActive(restored);setTab("train");return}
+   unlockAudio();
+   const workout=createWorkoutSnapshot(template,Date.now(),uid);
+   await db.active.put(workout);setActive(workout);setTab("train");
   }finally{startingRef.current=false}
  }
- async function persistActive(w:ActiveWorkout){await db.active.put(w);setActive({...w});}
- async function navigateExercise(direction:-1|1){if(!active)return;await persistActive(navigateWorkoutExercise(active,direction))}
- async function setField(ei:number,si:number,field:"weight"|"reps"|"rir",value:string){
-  if(!active)return; const w=structuredClone(active); const s=w.exercises[ei].sets[si];
-  s[field]=value===""?null:value; await persistActive(w);
- }
- async function completeSet(ei:number,si:number){
+
+ async function updateSetField(exerciseId:string,setId:string,field:Field,value:string){
   if(!active)return;
-  const key=`${active.id}:${ei}:${si}`;
-  if(completingRef.current.has(key)||completedSetRef.current.has(key)) return;
-  completingRef.current.add(key);
+  await mutateActive(active.id,workout=>{
+   const exercise=workout.exercises.find(item=>item.templateExerciseId===exerciseId);const set=exercise?.sets.find(item=>item.id===setId);
+   if(!set)return null;
+   set[field]=value===""?null:value;return workout;
+  });
+ }
+
+ async function usePreviousWeight(exerciseId:string,setId:string,weight:SetLog["weight"]){
+  if(!active||weight==null)return;
+  await mutateActive(active.id,workout=>{
+   const set=workout.exercises.find(item=>item.templateExerciseId===exerciseId)?.sets.find(item=>item.id===setId);
+   if(!set||set.completedAt)return null;set.weight=weight;return workout;
+  });
+ }
+
+ async function completeSet(exerciseId:string,setId:string){
+  if(!active)return;
+  const requestKey=`${active.id}:${setId}`;
+  if(completingRef.current.has(requestKey))return;
+  completingRef.current.add(requestKey);
+  let validationMessage="",prMessage="";
   try{
-   const w=structuredClone(active), ex=w.exercises[ei], s=ex.sets[si];
-   if(s.completedAt) return;
-   const normalized=normalizeSetForCompletion(s,ex.target);
-   if(!normalized.ok){notify(normalized.message);return}
-   s.weight=normalized.weight;
-   s.reps=normalized.reps;
-   s.rir=normalized.rir;
-   s.completedAt=Date.now();
-   const oldBest=ex.target.timed?0:bestE1rm(workouts,ex.name);
-   const newE=ex.target.timed?null:e1rm(normalized.weight,normalized.reps);
-   if(newE!==null && newE>oldBest && oldBest>0) notify(`Nowy e1RM PR • ${newE.toFixed(1)} kg`);
-   w.rest=null;
-   lastRestNoticeRef.current="";
-   if(settings?.autoRest!==false && shouldStartRest(w,ei,si)){
-    const startedAt=Date.now(), endsAt=startedAt+ex.target.restSec*1000;
-    s.restStartedAt=startedAt;s.restEndsAt=endsAt;
-    w.rest={exerciseName:ex.name,nextSet:Math.min(si+2,ex.sets.length),startedAt,endsAt};
-    lastRestNoticeRef.current="";
-   }
-   if(ex.target.superset){
-    const nextExerciseId=nextExerciseAfterCompletedSet(w,ei,si);
-    if(nextExerciseId) w.currentExerciseId=nextExerciseId;
-   }
-   await persistActive(w);
-   completedSetRef.current.add(key);
-  }finally{completingRef.current.delete(key)}
+   await mutateActive(active.id,workout=>{
+    const exerciseIndex=workout.exercises.findIndex(item=>item.templateExerciseId===exerciseId),exercise=workout.exercises[exerciseIndex];
+    const setIndex=exercise?.sets.findIndex(item=>item.id===setId)??-1,set=exercise?.sets[setIndex];
+    if(!exercise||!set||set.completedAt)return null;
+    const normalized=normalizeSetForCompletion(set,exercise.target);
+    if(!normalized.ok){validationMessage=normalized.message;return null}
+    const oldBest=exercise.target.timed?0:Math.max(bestE1rm(workouts,exercise.name),bestActiveE1rm(workout,exercise.name,set.id));
+    const newEstimate=exercise.target.timed?null:e1rm(normalized.weight,normalized.reps);
+    set.weight=normalized.weight;set.reps=normalized.reps;set.rir=normalized.rir;set.completedAt=Date.now();
+    if(newEstimate!==null&&Number.isFinite(newEstimate)&&newEstimate>oldBest)prMessage=`NOWY PR · ${exercise.name} · ${normalized.weight} × ${normalized.reps} · e1RM ${newEstimate.toFixed(1)} kg`;
+    workout.rest=null;lastRestNoticeRef.current="";
+    const supersetNextId=exercise.target.superset?nextExerciseAfterCompletedSet(workout,exerciseIndex,setIndex):null;
+    const restTarget=nextRestTarget(workout,exerciseIndex,setIndex);
+    if(settings?.autoRest!==false&&restTarget){
+     const startedAt=Date.now(),endsAt=startedAt+exercise.target.restSec*1000;
+     set.restStartedAt=startedAt;set.restEndsAt=endsAt;
+     workout.rest={kind:"rest",exerciseName:restTarget.exerciseName,nextExerciseId:restTarget.exerciseId,nextSet:restTarget.setNo,startedAt,endsAt};
+    }
+    if(supersetNextId)workout.currentExerciseId=supersetNextId;
+    return workout;
+   });
+   if(validationMessage)notify(validationMessage);else if(prMessage)notify(prMessage);
+  }finally{completingRef.current.delete(requestKey)}
  }
- async function adjustRest(delta:number){if(!active?.rest)return;const w=structuredClone(active);if(!w.rest)return;w.rest=adjustRestTimer(w.rest,delta,Date.now());lastRestNoticeRef.current="";await persistActive(w)}
- async function skipRest(){if(!active)return;const w=structuredClone(active);w.rest=null;await persistActive(w)}
- async function pauseRest(){if(!active?.rest)return;const w=structuredClone(active);if(!w.rest)return;w.rest=toggleRestPause(w.rest,Date.now());await persistActive(w)}
+
+ async function navigateExercise(direction:-1|1){
+  if(!active)return;
+  await mutateActive(active.id,workout=>navigateWorkoutExercise(workout,direction));
+ }
+
+ async function changeRest(update:(rest:RestState)=>RestState|null){
+  if(!active)return;
+  await mutateActive(active.id,workout=>{
+   if(!workout.rest)return null;
+   const next=update(workout.rest);workout.rest=next;lastRestNoticeRef.current="";return workout;
+  });
+ }
+ async function adjustRest(delta:number){await changeRest(rest=>adjustRestTimer(rest,delta,Date.now()))}
+ async function pauseRest(){await changeRest(rest=>toggleRestPause(rest,Date.now()))}
+ async function skipRest(){await changeRest(()=>null);setTimerOpen(false)}
+ async function startManualTimer(seconds:number){
+  if(!active)return;
+  unlockAudio();const startedAt=Date.now();
+  await mutateActive(active.id,workout=>{workout.rest={kind:"manual",exerciseName:"Timer",nextSet:0,startedAt,endsAt:startedAt+seconds*1000};return workout});
+  setManualTimerOpen(false);setTimerOpen(true);
+ }
+
  async function finishWorkout(){
-  if(!active)return;const incomplete=active.exercises.flatMap(e=>e.sets).filter(s=>!s.completedAt).length;
-  if(incomplete && !confirm(`${incomplete} niewykonanych serii. Zakończyć mimo to?`))return;
-  const done:WorkoutHistory={...structuredClone(active),endedAt:Date.now(),rest:null};
-  delete done.currentExerciseId;
-  await db.transaction("rw",db.workouts,db.active,async()=>{await db.workouts.put(done);await db.active.delete(active.id)});
-  setActive(null);await refresh();setTab("history");
+  if(!active||finishingRef.current)return;finishingRef.current=true;
+  try{
+   const stored=await db.active.get(active.id);if(!stored)return;
+   const incomplete=stored.exercises.flatMap(exercise=>exercise.sets).filter(set=>!set.completedAt).length;
+   if(incomplete&&!confirm(`${incomplete} niewykonanych serii. Zakończyć trening?`))return;
+   await db.transaction("rw",db.workouts,db.active,async()=>{const latest=await db.active.get(active.id);if(!latest)return;const finished:WorkoutHistory={...structuredClone(latest),endedAt:Date.now(),rest:null};delete finished.currentExerciseId;await db.workouts.put(finished);await db.active.delete(active.id)});
+   setActive(null);setTimerOpen(false);setTab("history");await refresh();
+  }finally{finishingRef.current=false}
  }
- async function discard(){if(active&&confirm("Usunąć aktywny trening?")){await db.active.delete(active.id);setActive(null)}}
- function previousSet(name:string,setNo:number){for(const w of workouts){const ex=w.exercises.find(x=>x.name===name);const s=ex?.sets.find(x=>x.setNo===setNo&&x.completedAt);if(s)return s}return null}
- async function addBody(fd:FormData){
-  const ent:BodyEntry={id:uid(),date:Date.now()};
-  for(const k of ["weight","waist","chest","arm"] as const){const v=String(fd.get(k)||"");const n=parseNum(v);if(n!=null)ent[k]=n}
-  ent.note=String(fd.get("note")||"");await db.body.put(ent);await refresh();notify("Pomiar zapisany");
- }
+ async function discardWorkout(){if(!active||!confirm("Usunąć aktywny trening? Zakończona historia pozostanie bez zmian."))return;await db.active.delete(active.id);setActive(null);setTimerOpen(false);notify("Aktywny trening usunięty")}
+
+ async function saveTemplate(template:WorkoutTemplate){await db.templates.put(template);setTemplates(await db.templates.toArray())}
+ async function createTemplate(template:WorkoutTemplate){await db.templates.add(template);setTemplates(await db.templates.toArray())}
+ async function deleteTemplate(templateId:string){await db.templates.delete(templateId);setTemplates(await db.templates.toArray())}
+ async function saveHistory(workout:WorkoutHistory){await db.workouts.put(workout);setWorkouts(await db.workouts.orderBy("startedAt").reverse().toArray())}
+ async function saveSettings(patch:Partial<Settings>){const current=await db.settings.get("main");const next=normalizeSettings({...current,...patch});await db.settings.put(next);setSettings(next)}
+ async function addBody(entry:BodyEntry){await db.body.put(entry);setBody(await db.body.orderBy("date").reverse().toArray())}
+
  async function exportJson(){
-  const data={version:1,exportedAt:new Date().toISOString(),templates:await db.templates.toArray(),workouts:await db.workouts.toArray(),body:await db.body.toArray(),settings:await db.settings.toArray(),active:await db.active.toArray()};
-  const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([JSON.stringify(data,null,2)],{type:"application/json"}));a.download=`gym-backup-${new Date().toISOString().slice(0,10)}.json`;a.click();URL.revokeObjectURL(a.href);
+  const data={version:2,exportedAt:new Date().toISOString(),templates:await db.templates.toArray(),workouts:await db.workouts.toArray(),body:await db.body.toArray(),settings:await db.settings.toArray(),active:await db.active.toArray()};
+  const url=URL.createObjectURL(new Blob([JSON.stringify(data,null,2)],{type:"application/json"}));const anchor=document.createElement("a");anchor.href=url;anchor.download=`gym-backup-${new Date().toISOString().slice(0,10)}.json`;anchor.click();window.setTimeout(()=>URL.revokeObjectURL(url),1000);
  }
  async function importJson(file:File){
-  try{const d=JSON.parse(await file.text());if(!Array.isArray(d.workouts)||!Array.isArray(d.templates))throw new Error();
-   if(!confirm(`Import: ${d.workouts.length} treningów. Nadpisać lokalne dane?`))return;
-   await db.transaction("rw",db.templates,db.workouts,db.body,db.settings,db.active,async()=>{await Promise.all([db.templates.clear(),db.workouts.clear(),db.body.clear(),db.settings.clear(),db.active.clear()]);await db.templates.bulkPut(d.templates);if(d.workouts?.length)await db.workouts.bulkPut(d.workouts);if(d.body?.length)await db.body.bulkPut(d.body);if(d.settings?.length)await db.settings.bulkPut(d.settings);if(d.active?.length)await db.active.bulkPut(d.active)});
-   await refresh();notify("Backup przywrócony");
-  }catch{notify("Nieprawidłowy plik backupu")}
+  try{
+   const data=JSON.parse(await file.text());
+   if(!Array.isArray(data.workouts)||!Array.isArray(data.templates))throw new Error("Nieprawidłowy format");
+   if(!confirm(`Kopia zawiera ${data.templates.length} planów i ${data.workouts.length} treningów. Zastąpić lokalne dane?`))return;
+   await db.transaction("rw",db.templates,db.workouts,db.body,db.settings,db.active,async()=>{
+    await Promise.all([db.templates.clear(),db.workouts.clear(),db.body.clear(),db.settings.clear(),db.active.clear()]);
+    await db.templates.bulkPut(data.templates);if(data.workouts.length)await db.workouts.bulkPut(data.workouts);
+    if(Array.isArray(data.body)&&data.body.length)await db.body.bulkPut(data.body);
+    if(Array.isArray(data.settings)&&data.settings.length)await db.settings.bulkPut(data.settings.map((setting:Partial<Settings>)=>normalizeSettings(setting)));else await db.settings.put(normalizeSettings(null));
+    if(Array.isArray(data.active)&&data.active.length)await db.active.bulkPut(data.active.map((workout:ActiveWorkout)=>restoreActiveWorkout(workout)));
+   });await refresh();notify("Kopia przywrócona");
+  }catch{notify("Nieprawidłowy plik kopii")}
  }
  async function exportCsv(){
-  const rows=[["date","workout","exercise","set","kg","reps","rir","e1rm"]];
-  for(const w of workouts)for(const e of w.exercises)for(const s of e.sets)if(s.completedAt){
-   const weight=toFiniteNumber(s.weight),reps=toFiniteNumber(s.reps);
-   const estimate=!e.target.timed&&weight!==null&&reps!==null&&weight>=0&&reps>0&&Number.isInteger(reps)?e1rm(weight,reps):null;
-   rows.push([new Date(w.startedAt).toISOString(),w.name,e.name,String(s.setNo),String(weight??""),String(reps??""),String(toFiniteNumber(s.rir)??""),estimate!==null&&Number.isFinite(estimate)?estimate.toFixed(2):""]);
+  const rows:[[string,...string[]],...string[][]]=[["date","workout","exercise","set","kg","reps","rir","e1rm"]];
+  for(const workout of workouts)for(const exercise of workout.exercises)for(const set of exercise.sets)if(set.completedAt){
+   const weight=toFiniteNumber(set.weight),reps=toFiniteNumber(set.reps);const estimate=!exercise.target.timed&&weight!==null&&reps!==null&&weight>=0&&reps>0&&Number.isInteger(reps)?e1rm(weight,reps):null;
+   rows.push([new Date(workout.startedAt).toISOString(),workout.name,exercise.name,String(set.setNo),String(weight??""),String(reps??""),String(toFiniteNumber(set.rir)??""),estimate!==null&&Number.isFinite(estimate)?estimate.toFixed(2):""]);
   }
-  const csv=rows.map(r=>r.map(v=>`"${String(v).replaceAll('"','""')}"`).join(",")).join("\n");const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([csv],{type:"text/csv"}));a.download="gym-history.csv";a.click();URL.revokeObjectURL(a.href);
+  const csv=rows.map(row=>row.map(value=>`"${String(value).replaceAll('"','""')}"`).join(",")).join("\n");const url=URL.createObjectURL(new Blob([csv],{type:"text/csv"}));const anchor=document.createElement("a");anchor.href=url;anchor.download="gym-history.csv";anchor.click();window.setTimeout(()=>URL.revokeObjectURL(url),1000);
  }
- const restRemaining=active?.rest ? (active.rest.pausedRemaining!==undefined?active.rest.pausedRemaining:Math.max(0,active.rest.endsAt-now)) : 0;
- return <div className="app">
-  <audio ref={audioRef} preload="none" />
-  <header className="topbar"><div><span className="eyebrow">GYM</span><h1>{active?active.name:tab==="train"?"Trening":tab==="history"?"Historia":tab==="progress"?"Progres":tab==="body"?"Ciało":"Więcej"}</h1></div>{active&&<button className="finish" onClick={finishWorkout}>Zakończ</button>}</header>
+
+ const restRemaining=active?.rest?(active.rest.pausedRemaining!==undefined?active.rest.pausedRemaining:Math.max(0,active.rest.endsAt-now)):0;
+ const pageTitle=tab==="train"&&active?active.name:labels[tab];
+ return <div className="app" data-theme={settings?.theme??"dark"}>
+  <header className="topbar">
+   <div className="topbar-copy"><span className="eyebrow">GYM PWA</span><h1>{pageTitle}</h1>{active&&tab!=="train"&&<span className="workout-live">Trening trwa · {fmtDuration(Math.floor((now-active.startedAt)/1000))}</span>}</div>
+   {active&&tab==="train"&&<div className="topbar-actions"><button className="timer-shortcut" onClick={()=>active.rest?setTimerOpen(true):setManualTimerOpen(true)}>TIMER</button><button className="finish-button" onClick={()=>void finishWorkout()}>Zakończ</button></div>}
+   {active&&tab!=="train"&&<button className="return-to-workout" onClick={()=>setTab("train")}>Do treningu</button>}
+  </header>
   <main>
-   {tab==="train" && (active?<ActiveView active={active} now={now} previousSet={previousSet} setField={setField} completeSet={completeSet} navigateExercise={navigateExercise} discard={discard}/>:<TrainHome templates={templates} workouts={workouts} startWorkout={startWorkout}/>)}
-   {tab==="history"&&<History workouts={workouts}/>}
-   {tab==="progress"&&<Progress workouts={workouts}/>}
-   {tab==="body"&&<Body body={body} addBody={addBody}/>}
-   {tab==="more"&&<More settings={settings} setSettings={async s=>{await db.settings.put(s);setSettings(s)}} exportJson={exportJson} importJson={importJson} exportCsv={exportCsv}/>}
+   <Suspense fallback={<section className="section"><p className="muted">Otwieranie ekranu…</p></section>}>
+   {tab==="train"&&(active?<ActiveView active={active} now={now} settings={settings} previousSets={name=>previousSets(workouts,name)} setField={updateSetField} usePreviousWeight={usePreviousWeight} completeSet={completeSet} navigateExercise={navigateExercise} discard={discardWorkout} openTimer={()=>active.rest?setTimerOpen(true):setManualTimerOpen(true)} onShowMotion={()=>void saveSettings({hideMotion:false})}/>:<TrainHome templates={templates} workouts={workouts} active={active} onStart={startWorkout} onContinue={()=>setTab("train")}/>)}
+   {tab==="plan"&&<PlanScreen settings={settings} templates={templates} workouts={workouts} active={active} onSave={saveTemplate} onCreate={createTemplate} onDelete={deleteTemplate} onStart={startWorkout} onContinue={()=>setTab("train")} notify={notify}/>}
+   {tab==="history"&&<HistoryScreen workouts={workouts} catalog={exerciseCatalog(templates)} onSave={saveHistory} notify={notify}/>}
+   {tab==="progress"&&<ProgressScreen workouts={workouts} body={body}/>}
+   {tab==="more"&&<MoreScreen databaseVersion={db.verno} settings={settings} body={body} onSaveSettings={saveSettings} onAddBody={addBody} exportJson={exportJson} importJson={importJson} exportCsv={exportCsv} notify={notify}/>}
+   </Suspense>
   </main>
-  {active?.rest&&<div className={"restbar "+(restRemaining<=0?"done":"")}><div><small>{restRemaining<=0?"PRZERWA ZAKOŃCZONA":active.rest.exerciseName+" • PRZERWA"}</small><strong>{restRemaining<=0?"Gotowy":fmtDuration(Math.ceil(restRemaining/1000))}</strong></div><div className="restactions"><button onClick={()=>adjustRest(-30)}>−30</button><button onClick={pauseRest}>{active.rest.pausedRemaining!==undefined?"Wznów":"Pauza"}</button><button onClick={()=>adjustRest(30)}>+30</button><button onClick={skipRest}>Pomiń</button></div></div>}
-  {!active&&<nav className="bottom">{([["train","Trening"],["history","Historia"],["progress","Progres"],["body","Ciało"],["more","Więcej"]] as [Tab,string][]).map(([k,l])=><button key={k} className={tab===k?"active":""} onClick={()=>setTab(k)}>{l}</button>)}</nav>}
-  {toast&&<div className="toast">{toast}</div>}
- </div>
+  {active?.rest&&<RestBar rest={active.rest} remaining={restRemaining} onOpen={()=>setTimerOpen(true)} onAdjust={adjustRest} onPause={pauseRest} onSkip={skipRest}/>}
+  <nav className="bottom-nav" aria-label="Nawigacja główna">{([["train","Trening","◉"],["plan","Plan","▤"],["history","Historia","↺"],["progress","Progres","⌁"],["more","Więcej","···"]] as [Tab,string,string][]).map(([key,label,icon])=><button key={key} className={tab===key?"active":""} aria-current={tab===key?"page":undefined} onClick={()=>setTab(key)}><span aria-hidden="true">{icon}</span><small>{label}</small></button>)}</nav>
+  {manualTimerOpen&&<ManualTimer onClose={()=>setManualTimerOpen(false)} onStart={startManualTimer}/>}
+  {timerOpen&&active?.rest&&<Suspense fallback={null}><TimerScreen rest={active.rest} remaining={restRemaining} active={active} onClose={()=>setTimerOpen(false)} onAdjust={adjustRest} onPause={pauseRest} onSkip={skipRest}/></Suspense>}
+  {toast&&<div className="toast" role="status">{toast}</div>}
+ </div>;
 }
 
-function TrainHome({templates,workouts,startWorkout}:{templates:WorkoutTemplate[];workouts:WorkoutHistory[];startWorkout:(t:WorkoutTemplate)=>void}){
- const last=workouts[0];return <section className="section"><div className="sectionhead"><h2>Co dzisiaj trenujesz?</h2>{last&&<p>Ostatnio: <b>{last.name}</b> · {fmtDate(last.startedAt)}</p>}</div><div className="templateList">{templates.map(t=><button className="templateRow" key={t.id} onClick={()=>startWorkout(t)}><span><b>{t.name}</b><small>{t.exercises.length} ćwiczeń</small></span><span>Rozpocznij</span></button>)}</div></section>
-}
-function ActiveView({active,now,previousSet,setField,completeSet,navigateExercise,discard}:{active:ActiveWorkout;now:number;previousSet:(n:string,s:number)=>SetLog|null;setField:(e:number,s:number,f:"weight"|"reps"|"rir",v:string)=>void;completeSet:(e:number,s:number)=>void;navigateExercise:(direction:-1|1)=>void;discard:()=>void}){
- const exerciseIndex=currentExerciseIndex(active),exerciseCount=active.exercises.length;
- const ex=active.exercises[exerciseIndex];
- if(!ex) return <section className="workout"><Empty text="Brak ćwiczeń w aktywnym treningu."/></section>;
- const activeSetIndex=firstIncompleteSetIndex(ex),activeSet=activeSetIndex>=0?ex.sets[activeSetIndex]:null;
- const lastCompleted=[...ex.sets].reverse().find(set=>set.completedAt);
- const previous=activeSet?previousSet(ex.name,activeSet.setNo):null;
- const progress=exerciseCount?((exerciseIndex+1)/exerciseCount)*100:0;
- return <section className="workout">
-  <div className="workoutMeta"><span>{fmtDuration(Math.floor((now-active.startedAt)/1000))}</span><button className="textbtn danger" onClick={discard}>Odrzuć</button></div>
-  <div className="exerciseProgress"><div><b>{exerciseIndex+1} / {exerciseCount}</b><span>ćwiczeń</span></div><div className="progressTrack" role="progressbar" aria-label="Postęp treningu" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(progress)}><span style={{width:`${progress}%`}}/></div></div>
-  <article className="exercise" key={ex.templateExerciseId}>
-   <div className="exerciseHead"><div><h3>{ex.name}</h3><p>{ex.target.sets} serie · {ex.target.timed?"czas":`${ex.target.repMin}–${ex.target.repMax} powt.`} · RIR {ex.target.rir} · tempo {ex.target.tempo}</p></div><span>Przerwa {fmtDuration(ex.target.restSec)}</span></div>
-   <ExerciseMotion exerciseId={ex.templateExerciseId}/>
-   <div className="setProgress" aria-label="Wykonane serie">{ex.sets.map((set,index)=><span key={set.id} className={set.completedAt?"setDot done":index===activeSetIndex?"setDot current":"setDot"}>{set.completedAt?`${set.setNo} ✓`:set.setNo}</span>)}</div>
-   {activeSet?<>
-    <div className="currentSetHead"><b>SERIA {activeSet.setNo}</b>{previous&&<span className="previousValue">Poprzednio: {previous.weight??"—"} × {previous.reps??"—"}</span>}
-     {!previous&&lastCompleted&&<span>Poprzednia seria: {lastCompleted.weight??"—"} × {lastCompleted.reps??"—"}</span>}
-    </div>
-    <div className="inputLabels"><span>KG</span><span>{ex.target.timed?"SEK.":"POWT."}</span><span>RIR</span></div>
-    <div className="activeSetInputs">
-     <input inputMode="decimal" aria-label={`Ciężar seria ${activeSet.setNo}`} placeholder="kg" value={activeSet.weight??""} onChange={e=>setField(exerciseIndex,activeSetIndex,"weight",e.target.value)}/>
-     <input inputMode="numeric" aria-label={`${ex.target.timed?"Czas w sekundach":"Powtórzenia"} seria ${activeSet.setNo}`} placeholder={ex.target.timed?"sek.":"powt."} value={activeSet.reps??""} onChange={e=>setField(exerciseIndex,activeSetIndex,"reps",e.target.value)}/>
-     <input inputMode="numeric" aria-label={`RIR seria ${activeSet.setNo}`} placeholder="RIR" value={activeSet.rir??""} onChange={e=>setField(exerciseIndex,activeSetIndex,"rir",e.target.value)}/>
-    </div>
-    <button className="completeSetButton" onClick={()=>completeSet(exerciseIndex,activeSetIndex)}>✓ Zakończ serię</button>
-   </>:<p className="allSetsDone">Wszystkie serie wykonane.</p>}
-  </article>
-  <div className="exerciseNavigation"><button onClick={()=>navigateExercise(-1)} disabled={exerciseIndex===0}>← Poprzednie</button><button onClick={()=>navigateExercise(1)} disabled={exerciseIndex===exerciseCount-1}>Następne ćwiczenie →</button></div>
+function TrainHome({templates,workouts,active,onStart,onContinue}:{templates:WorkoutTemplate[];workouts:WorkoutHistory[];active:ActiveWorkout|null;onStart:(template:WorkoutTemplate)=>void;onContinue:()=>void}){
+ const last=workouts[0];const todays=new Intl.DateTimeFormat("pl-PL",{weekday:"long",day:"numeric",month:"long"}).format(Date.now());
+ const lastSets=last?.exercises.reduce((count,exercise)=>count+exercise.sets.filter(set=>set.completedAt).length,0)||0;
+ return <section className="section train-home">
+  <div className="today-label">{capitalize(todays)}</div>
+  {active&&<button className="continue-workout" onClick={onContinue}><span><b>Kontynuuj {active.name}</b><small>Trening zapisany · {active.exercises.reduce((sum,exercise)=>sum+exercise.sets.filter(set=>set.completedAt).length,0)} serii ukończonych</small></span><span>→</span></button>}
+  <div className="section-heading home-heading"><div><h2>Wybierz trening</h2><p>Twoje zapisane szablony.</p></div><span>{templates.length}</span></div>
+  <div className="workout-pick-list">{templates.map(template=><button key={template.id} className="workout-pick" onClick={()=>onStart(template)} disabled={Boolean(active)}><span><b>{template.name}</b><small>{template.exercises.length} ćwiczeń · około {Math.max(15,Math.round(template.exercises.length*8))} min</small></span><span aria-hidden="true">→</span></button>)}</div>
+  {last&&<section className="last-workout"><div className="section-heading"><div><h2>Ostatni trening</h2></div></div><div className="last-workout-row"><b>{last.name}</b><span>{fmtDate(last.startedAt)}</span></div><div className="last-workout-stats"><span>{fmtDuration(Math.floor((last.endedAt-last.startedAt)/1000))}</span><span>{lastSets} serii</span><span>{Math.round(volume(last)).toLocaleString("pl-PL")} kg</span></div></section>}
+  {!last&&<p className="empty-state">Po pierwszym treningu zobaczysz tu swoje ostatnie wyniki.</p>}
  </section>;
 }
-function History({workouts}:{workouts:WorkoutHistory[]}){return <section className="section">{workouts.length===0?<Empty text="Brak zapisanych treningów."/>:<div className="historyList">{workouts.map(w=><details key={w.id} className="historyItem"><summary><div><b>{w.name}</b><span>{fmtDate(w.startedAt)}</span></div><div className="right"><b>{fmtDuration(Math.floor((w.endedAt-w.startedAt)/1000))}</b><span>{Math.round(volume(w)).toLocaleString("pl-PL")} kg</span></div></summary><div className="historyBody">{w.exercises.map(e=><div key={e.templateExerciseId}><h4>{e.name}</h4>{e.sets.filter(s=>s.completedAt).map(s=><p key={s.id}>{s.setNo}. {s.weight} kg × {s.reps}{s.rir!=null?` · RIR ${s.rir}`:""}</p>)}</div>)}</div></details>)}</div>}</section>}
-function Progress({workouts}:{workouts:WorkoutHistory[]}){
- const names=Array.from(new Set(workouts.flatMap(w=>w.exercises.map(e=>e.name))));const bench="Wyciskanie sztangi na ławce płaskiej",bE=bestE1rm(workouts,bench),bA=actual1rm(workouts,bench),recent=workouts.filter(w=>w.startedAt>=Date.now()-30*864e5);
- return <section className="section"><div className="metrics"><div><small>Treningi · 30 dni</small><b>{recent.length}</b></div><div><small>Objętość · 30 dni</small><b>{Math.round(recent.reduce((a,w)=>a+volume(w),0)).toLocaleString("pl-PL")} kg</b></div><div><small>Bench e1RM</small><b>{bE?bE.toFixed(1):"—"} kg</b></div><div><small>Bench 1RM / cel</small><b>{bA?bA.toFixed(1):"—"} / 100 kg</b></div></div><h2>Ćwiczenia</h2><div className="progressList">{names.length?names.map(n=><div key={n}><span>{n}</span><b>{bestE1rm(workouts,n)?bestE1rm(workouts,n).toFixed(1)+" kg e1RM":"—"}</b></div>):<Empty text="Statystyki pojawią się po pierwszych treningach."/>}</div></section>
+function ActiveView({active,now,settings,previousSets,setField,usePreviousWeight,completeSet,navigateExercise,discard,openTimer,onShowMotion}:{active:ActiveWorkout;now:number;settings:Settings|null;previousSets:(name:string)=>SetLog[];setField:(exerciseId:string,setId:string,field:Field,value:string)=>void;usePreviousWeight:(exerciseId:string,setId:string,weight:SetLog["weight"])=>void;completeSet:(exerciseId:string,setId:string)=>void;navigateExercise:(direction:-1|1)=>void;discard:()=>void;openTimer:()=>void;onShowMotion:()=>void}){
+ const index=currentExerciseIndex(active),count=active.exercises.length,exercise=active.exercises[index];
+ if(!exercise)return <section className="section"><Empty text="Ten trening nie ma już ćwiczeń."/><button className="quiet-button danger-text" onClick={discard}>Odrzuć trening</button></section>;
+ const setIndex=firstIncompleteSetIndex(exercise),set=setIndex>=0?exercise.sets[setIndex]:null;
+ const latestCompleted=[...exercise.sets].reverse().find(item=>item.completedAt);
+ const previous=previousSets(exercise.name);
+ const completeSets=active.exercises.reduce((sum,item)=>sum+item.sets.filter(entry=>entry.completedAt).length,0);
+ const allSets=active.exercises.reduce((sum,item)=>sum+item.sets.length,0);
+ const progress=count?Math.round((index+1)/count*100):0;
+ return <section className="section active-workout">
+  <div className="workout-info-row"><span>{fmtDuration(Math.floor((now-active.startedAt)/1000))}</span><span>{completeSets}/{allSets} serii</span><button className="quiet-button danger-text" onClick={discard}>Odrzuć</button></div>
+  <div className="exercise-progress"><div><b>{index+1} / {count}</b><span>ćwiczeń</span></div><div className="progress-track" role="progressbar" aria-label="Postęp treningu" aria-valuemin={0} aria-valuemax={100} aria-valuenow={progress}><span style={{width:`${progress}%`}}/></div></div>
+  <article className="current-exercise" key={exercise.templateExerciseId}>
+   <div className="current-exercise-heading"><h2>{exercise.name}</h2><p>{exercise.target.sets} × {exercise.target.timed?"czas":`${exercise.target.repMin}–${exercise.target.repMax}`} <span>·</span> RIR {exercise.target.rir} <span>·</span> tempo {exercise.target.tempo}</p><small>PRZERWA {fmtDuration(exercise.target.restSec)}</small></div>
+   {!settings?.hideMotion&&<ExerciseMotion exerciseId={exercise.templateExerciseId}/>}
+   {settings?.hideMotion&&<button className="show-motion" onClick={onShowMotion}>Włącz podgląd ruchu</button>}
+   <div className="set-progress" aria-label="Postęp serii">{exercise.sets.map((item,setNo)=><span key={item.id} className={item.completedAt?"done":setNo===setIndex?"current":""}>{item.completedAt?"✓":item.setNo}</span>)}</div>
+   {set?<>
+    <div className="set-context"><b>SERIA {set.setNo}</b>{previous.length>0?<div className="previous-results"><small>OSTATNIO</small><div>{previous.map(item=><button key={item.id} className="previous-result" onClick={()=>usePreviousWeight(exercise.templateExerciseId,set.id,item.weight)}><b>{item.weight??"—"} × {item.reps??"—"}</b></button>)}</div></div>:latestCompleted?<span className="last-set-note">Poprzednia seria: {latestCompleted.weight??"—"} × {latestCompleted.reps??"—"}</span>:<span className="last-set-note">Brak poprzedniego wyniku</span>}</div>
+    <div className="set-input-labels"><span>KG</span><span>{exercise.target.timed?"SEK.":"POWT."}</span><span>RIR</span></div>
+    <div className="set-inputs"><input aria-label={`Ciężar seria ${set.setNo}`} inputMode="decimal" placeholder="0" value={set.weight??""} onChange={event=>setField(exercise.templateExerciseId,set.id,"weight",event.target.value)}/><input aria-label={`${exercise.target.timed?"Czas":"Powtórzenia"} seria ${set.setNo}`} inputMode="numeric" placeholder={exercise.target.timed?"sek.":String(exercise.target.repMin)} value={set.reps??""} onChange={event=>setField(exercise.templateExerciseId,set.id,"reps",event.target.value)}/><input aria-label={`RIR seria ${set.setNo}`} inputMode="numeric" placeholder={exercise.target.rir} value={set.rir??""} onChange={event=>setField(exercise.templateExerciseId,set.id,"rir",event.target.value)}/></div>
+    <button className="complete-set-button" onClick={()=>completeSet(exercise.templateExerciseId,set.id)}>✓ Zakończ serię</button>
+   </>:<div className="exercise-complete"><b>Wszystkie serie wykonane</b><span>Możesz przejść dalej albo wrócić do zapisanych serii.</span></div>}
+  </article>
+  <div className="exercise-navigation"><button onClick={()=>navigateExercise(-1)} disabled={index===0}>← Poprzednie</button><button onClick={()=>navigateExercise(1)} disabled={index===count-1}>Następne ćwiczenie →</button></div>
+  <button className="manual-timer-link" onClick={openTimer}>Timer ręczny</button>
+ </section>;
 }
-function Body({body,addBody}:{body:BodyEntry[];addBody:(fd:FormData)=>void}){return <section className="section"><form className="bodyForm" action={addBody}><div className="formgrid"><label>Masa (kg)<input name="weight" inputMode="decimal"/></label><label>Talia (cm)<input name="waist" inputMode="decimal"/></label><label>Klatka (cm)<input name="chest" inputMode="decimal"/></label><label>Ramię (cm)<input name="arm" inputMode="decimal"/></label></div><label>Notatka<input name="note"/></label><button className="primary" type="submit">Zapisz pomiar</button></form><div className="progressList">{body.map(x=><div key={x.id}><span>{fmtDate(x.date)}{x.waist?` · talia ${x.waist} cm`:""}</span><b>{x.weight?x.weight+" kg":"—"}</b></div>)}</div></section>}
-function More({settings,setSettings,exportJson,importJson,exportCsv}:{settings:Settings|null;setSettings:(s:Settings)=>void;exportJson:()=>void;importJson:(f:File)=>void;exportCsv:()=>void}){
- if(!settings)return null;return <section className="section"><div className="settings"><h2>Trening</h2><label className="switchrow">Autostart przerwy<input type="checkbox" checked={settings.autoRest} onChange={e=>setSettings({...settings,autoRest:e.target.checked})}/></label><label className="switchrow">Dźwięk<input type="checkbox" checked={settings.sound} onChange={e=>setSettings({...settings,sound:e.target.checked})}/></label><label className="switchrow">Wibracja<input type="checkbox" checked={settings.vibration} onChange={e=>setSettings({...settings,vibration:e.target.checked})}/></label><h2>Dane</h2><button className="settingsBtn" onClick={exportJson}>Eksportuj backup JSON</button><label className="settingsBtn file">Importuj backup JSON<input type="file" accept=".json,application/json" onChange={e=>e.target.files?.[0]&&importJson(e.target.files[0])}/></label><button className="settingsBtn" onClick={exportCsv}>Eksportuj historię CSV</button><h2>Plan</h2>{exerciseSubstitutions.map(x=><p className="sub" key={x}>{x}</p>)}<h2>O aplikacji</h2><p className="muted">Gym PWA · dane lokalne w IndexedDB · bez analityki i trackerów.</p></div></section>
+
+function RestBar({rest,remaining,onOpen,onAdjust,onPause,onSkip}:{rest:RestState;remaining:number;onOpen:()=>void;onAdjust:(seconds:number)=>void;onPause:()=>void;onSkip:()=>void}){
+ const paused=rest.pausedRemaining!==undefined,ended=remaining<=0&&!paused;
+ return <div className={`rest-bar ${ended?"ended":""}`}>
+  <button className="rest-bar-open" onClick={onOpen}><small>{rest.kind==="manual"?"TIMER":ended?"PRZERWA ZAKOŃCZONA":"PRZERWA"}</small><b>{clock(remaining)}</b><span>{rest.kind==="manual"?"Timer ręczny":rest.exerciseName}</span></button>
+  <div className="rest-bar-actions"><button aria-label="Odejmij 30 sekund" onClick={()=>onAdjust(-30)}>−30</button><button aria-label={paused?"Wznów":"Pauza"} onClick={onPause}>{paused?"Wznów":"Pauza"}</button><button aria-label="Dodaj 30 sekund" onClick={()=>onAdjust(30)}>+30</button><button aria-label="Pomiń przerwę" onClick={onSkip}>Pomiń</button></div>
+ </div>;
 }
-function Empty({text}:{text:string}){return <p className="empty">{text}</p>}
+
+function ManualTimer({onClose,onStart}:{onClose:()=>void;onStart:(seconds:number)=>void}){
+ const presets=[60,90,120,150,180,240];
+ const [custom,setCustom]=useState("120");
+ return <div className="timer-overlay" role="dialog" aria-modal="true" aria-labelledby="manual-timer-title"><div className="manual-timer-sheet">
+  <div className="timer-sheet-top"><span id="manual-timer-title">TIMER RĘCZNY</span><button className="quiet-button" onClick={onClose}>Zamknij</button></div>
+  <p>Wybierz długość przerwy</p><div className="timer-presets">{presets.map(seconds=><button key={seconds} onClick={()=>onStart(seconds)}>{seconds/60}:{String(seconds%60).padStart(2,"0")}</button>)}</div>
+  <label className="field-label">WŁASNY CZAS (SEK.)<input type="number" min="1" max="7200" inputMode="numeric" value={custom} onChange={event=>setCustom(event.target.value)}/></label>
+  <button className="primary" onClick={()=>{const seconds=Number(custom);if(Number.isInteger(seconds)&&seconds>0&&seconds<=7200)onStart(seconds)}}>Uruchom timer</button>
+ </div></div>;
+}
+
+function Empty({text}:{text:string}){return <p className="empty-state">{text}</p>}
+function previousSets(workouts:WorkoutHistory[],name:string):SetLog[]{
+ for(const workout of workouts){const exercise=workout.exercises.find(item=>item.name===name);const sets=exercise?.sets.filter(set=>set.completedAt);if(sets?.length)return sets}
+ return [];
+}
+function bestActiveE1rm(workout:ActiveWorkout,exerciseName:string,excludeSetId:string){
+ let best=0;
+ for(const exercise of workout.exercises)if(exercise.name===exerciseName&&!exercise.target.timed)for(const set of exercise.sets){
+  if(set.id===excludeSetId||!set.completedAt)continue;
+  const weight=toFiniteNumber(set.weight),reps=toFiniteNumber(set.reps);
+  if(weight!==null&&reps!==null&&weight>=0&&reps>0&&Number.isInteger(reps))best=Math.max(best,e1rm(weight,reps));
+ }
+ return best;
+}
+function exerciseCatalog(templates:WorkoutTemplate[]){
+ const entries=[...defaultTemplates,...templates].flatMap(template=>template.exercises);const seen=new Map<string,typeof entries[number]>();
+ for(const exercise of entries)if(!seen.has(exercise.id))seen.set(exercise.id,exercise);return [...seen.values()];
+}
+function capitalize(value:string){return value.charAt(0).toLocaleUpperCase("pl-PL")+value.slice(1)}
+function clock(milliseconds:number){const seconds=Math.max(0,Math.ceil(milliseconds/1000));return `${String(Math.floor(seconds/60)).padStart(2,"0")}:${String(seconds%60).padStart(2,"0")}`}

@@ -48,9 +48,11 @@ export function currentExerciseIndex(workout:ActiveWorkout):number{
 }
 
 export function restoreActiveWorkout(workout:ActiveWorkout):ActiveWorkout{
- if(workout.exercises.some(ex=>ex.templateExerciseId===workout.currentExerciseId)) return workout;
- const first=workout.exercises[0];
- return first?{...workout,currentExerciseId:first.templateExerciseId}:workout;
+ const hasSavedExercise=workout.exercises.some(ex=>ex.templateExerciseId===workout.currentExerciseId);
+ const currentExerciseId=hasSavedExercise?workout.currentExerciseId:workout.exercises[0]?.templateExerciseId;
+ const rest=workout.rest&&!workout.rest.kind?{...workout.rest,kind:"rest" as const}:workout.rest;
+ if(currentExerciseId===workout.currentExerciseId&&rest===workout.rest)return workout;
+ return {...workout,currentExerciseId,rest};
 }
 
 export function selectWorkoutExercise(workout:ActiveWorkout,exerciseId:string):ActiveWorkout{
@@ -66,6 +68,16 @@ export function navigateWorkoutExercise(workout:ActiveWorkout,direction:-1|1):Ac
 
 export function firstIncompleteSetIndex(exercise:{sets:SetLog[]}):number{
  return exercise.sets.findIndex(set=>!set.completedAt);
+}
+
+export function nextRestTarget(workout:ActiveWorkout,exerciseIndex:number,setIndex:number):{exerciseId:string;exerciseName:string;setNo:number}|null{
+ const current=workout.exercises[exerciseIndex];
+ if(!current||!shouldStartRest(workout,exerciseIndex,setIndex))return null;
+ const nextId=current.target.superset?nextExerciseAfterCompletedSet(workout,exerciseIndex,setIndex):current.templateExerciseId;
+ const nextExercise=workout.exercises.find(exercise=>exercise.templateExerciseId===nextId);
+ const nextSetIndex=nextExercise?firstIncompleteSetIndex(nextExercise):-1;
+ if(!nextExercise||nextSetIndex<0)return null;
+ return {exerciseId:nextExercise.templateExerciseId,exerciseName:nextExercise.name,setNo:nextExercise.sets[nextSetIndex].setNo};
 }
 
 /**

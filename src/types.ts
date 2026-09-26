@@ -12,9 +12,12 @@ export type ExerciseTemplate={
  superset?:string;
  perLeg?:boolean;
  timed?:boolean;
+ muscleGroup?:string;
+ equipment?:string;
+ minIncrement?:number;
 };
 
-export type WorkoutTemplate={id:string;name:string;exercises:ExerciseTemplate[]};
+export type WorkoutTemplate={id:string;name:string;exercises:ExerciseTemplate[];createdAt?:number};
 
 export type SetLog={
  id:string;
@@ -36,9 +39,11 @@ export type ExerciseLog={
 
 export type RestState={
  exerciseName:string;
+ nextExerciseId?:string;
  nextSet:number;
  startedAt:number;
  endsAt:number;
+ kind?:"rest"|"manual";
  pausedRemaining?:number;
  notifiedAt?:number;
 };
@@ -73,4 +78,7 @@ export type Settings={
  sound:boolean;
  vibration:boolean;
  theme:"dark"|"light"|"system";
+ hideMotion?:boolean;
+ defaultRir?:string;
+ defaultIncrement?:number;
 };

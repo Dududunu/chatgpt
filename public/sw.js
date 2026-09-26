@@ -1,9 +1,16 @@
-const VERSION="gym-pwa-v3";
+const VERSION="gym-pwa-v5";
 const APP_SHELL=["./","./index.html","./manifest.webmanifest","./icon.svg"];
 
 self.addEventListener("install",event=>{
- event.waitUntil(caches.open(VERSION).then(cache=>cache.addAll(APP_SHELL)));
- self.skipWaiting();
+ event.waitUntil((async()=>{
+  const cache=await caches.open(VERSION);
+  await cache.addAll(APP_SHELL);
+  try{
+   const response=await fetch("./sw-assets.json",{cache:"no-store"});
+   if(response.ok){const assets=await response.json();if(Array.isArray(assets)&&assets.every(asset=>typeof asset==="string"))await cache.addAll(assets)}
+  }catch{}
+  await self.skipWaiting();
+ })());
 });
 
 self.addEventListener("activate",event=>{

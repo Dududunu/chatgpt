@@ -1,5 +1,5 @@
 import { describe,expect,it } from "vitest";
-import { adjustRestTimer, currentExerciseIndex, firstIncompleteSetIndex, isRestNotificationDue, navigateWorkoutExercise, nextExerciseAfterCompletedSet, normalizeSetForCompletion, restoreActiveWorkout, shouldStartRest, toFiniteNumber, toggleRestPause } from "./workoutLogic";
+import { adjustRestTimer, currentExerciseIndex, firstIncompleteSetIndex, isRestNotificationDue, navigateWorkoutExercise, nextExerciseAfterCompletedSet, nextRestTarget, normalizeSetForCompletion, restoreActiveWorkout, shouldStartRest, toFiniteNumber, toggleRestPause } from "./workoutLogic";
 import type { ActiveWorkout, ExerciseTemplate, RestState } from "./types";
 
 const normal:ExerciseTemplate={id:"x",name:"X",sets:2,repMin:6,repMax:8,rir:"2",tempo:"2110",restSec:120};
@@ -76,6 +76,7 @@ describe("superset rest",()=>{
   workout.exercises[1].sets[0].completedAt=20;
   expect(nextExerciseAfterCompletedSet(workout,1,0)).toBe("A");
   expect(shouldStartRest(workout,1,0)).toBe(true);
+  expect(nextRestTarget(workout,1,0)).toEqual({exerciseId:"A",exerciseName:"A",setNo:2});
   workout.exercises[0].sets[1].completedAt=30;
   expect(nextExerciseAfterCompletedSet(workout,0,1)).toBe("B");
   workout.exercises[1].sets[1].completedAt=40;
@@ -109,7 +110,7 @@ describe("active exercise navigation and recovery",()=>{
   expect(currentExerciseIndex(restored)).toBe(1);
   expect(restored.exercises[1].sets[0].completedAt).toBe(5);
   expect(restored.exercises[1].sets[1].weight).toBe("27,5");
-  expect(restored.rest).toEqual(workout.rest);
+  expect(restored.rest).toEqual({...workout.rest,kind:"rest"});
  });
 
  it("keeps the same current exercise if a plan is reordered",()=>{
@@ -122,6 +123,7 @@ describe("active exercise navigation and recovery",()=>{
   expect(firstIncompleteSetIndex(workout.exercises[1])).toBe(1);
   const legacy=structuredClone(workout);delete legacy.currentExerciseId;
   expect(restoreActiveWorkout(legacy).currentExerciseId).toBe("A");
+  expect(restoreActiveWorkout(legacy).rest?.kind).toBe("rest");
  });
 });
 
