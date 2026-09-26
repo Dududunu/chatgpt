@@ -112,6 +112,12 @@ describe("active exercise navigation and recovery",()=>{
   expect(restored.rest).toEqual(workout.rest);
  });
 
+ it("keeps the same current exercise if a plan is reordered",()=>{
+  const reordered={...workout,exercises:[workout.exercises[2],workout.exercises[0],workout.exercises[1]]};
+  expect(currentExerciseIndex(reordered)).toBe(2);
+  expect(restoreActiveWorkout(reordered).currentExerciseId).toBe("B");
+ });
+
  it("chooses the first unfinished set and migrates older active records",()=>{
   expect(firstIncompleteSetIndex(workout.exercises[1])).toBe(1);
   const legacy=structuredClone(workout);delete legacy.currentExerciseId;
