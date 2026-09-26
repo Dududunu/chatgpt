@@ -4,7 +4,7 @@ import { toFiniteNumber } from "./workoutLogic";
 import { defaultTemplates } from "./seed";
 import { addTemplateExercise, createWorkoutTemplate, duplicateWorkoutTemplate, moveTemplateExercise, removeTemplateExercise, updateTemplateExercise, validateWorkoutTemplate } from "./planLogic";
 import type { ActiveWorkout, ExerciseTemplate, Settings, WorkoutHistory, WorkoutTemplate } from "./types";
-import { ExerciseMotion } from "./ExerciseMotion";
+import { ExerciseImage } from "./ExerciseImage";
 
 type Props={
  settings:Settings|null;
@@ -121,7 +121,7 @@ export function PlanScreen({settings,templates,workouts,active,onSave,onCreate,o
    <button className="plan-open" onClick={()=>openTemplate(template)}><span><b>{template.name}</b><small>{template.exercises.length} ćwiczeń</small></span><span aria-hidden="true">›</span></button>
    <button className="quiet-button" aria-label={`Rozpocznij ${template.name}`} disabled={Boolean(active)} onClick={()=>onStart(template)}>Start</button>
   </div>)}</div>
-  <Library catalog={catalog} workouts={workouts} query={libraryQuery} onQuery={setLibraryQuery} filtered={filtered}/>
+  <Library catalog={catalog} workouts={workouts} query={libraryQuery} onQuery={setLibraryQuery} filtered={filtered} showImages={settings?.showExerciseImages===true}/>
  </section>;
 }
 
@@ -162,7 +162,7 @@ function AddExercise({catalog,template,onChange,defaults}:{catalog:ExerciseTempl
  </div>;
 }
 
-function Library({catalog,workouts,query,onQuery,filtered}:{catalog:ExerciseTemplate[];workouts:WorkoutHistory[];query:string;onQuery:(query:string)=>void;filtered:ExerciseTemplate[]}){
+function Library({catalog,workouts,query,onQuery,filtered,showImages}:{catalog:ExerciseTemplate[];workouts:WorkoutHistory[];query:string;onQuery:(query:string)=>void;filtered:ExerciseTemplate[];showImages:boolean}){
  const [open,setOpen]=useState(false);
  const [openExerciseId,setOpenExerciseId]=useState<string|null>(null);
  return <section className="library-section">
@@ -176,7 +176,7 @@ function Library({catalog,workouts,query,onQuery,filtered}:{catalog:ExerciseTemp
     return <details className="library-exercise" key={exercise.id} open={isOpen} onToggle={event=>{if(event.currentTarget.open)setOpenExerciseId(exercise.id);else if(isOpen)setOpenExerciseId(null)}}><summary><span>{exercise.name}</span><small>{exercise.muscleGroup||"Ćwiczenie"}</small></summary>
      {isOpen&&<div className="library-detail"><div className="library-stats"><span>Najcięższa seria <b>{bestLoad===null?"—":`${bestLoad} kg`}</b></span><span>Actual 1RM <b>{one?`${one} kg`:"—"}</b></span><span>e1RM <b>{best?`${best.toFixed(1)} kg`:"—"}</b></span></div><p>{exercise.equipment||"Sprzęt według planu"} · domyślnie {exercise.sets} serie · {exercise.timed?"czas":`${exercise.repMin}–${exercise.repMax} powt.`} · przerwa {time(exercise.restSec)}</p>
       {related[0]&&<div className="last-performance"><b>Ostatnio · {date(related[0].workout.startedAt)}</b>{related[0].entry.sets.filter(set=>set.completedAt).map(set=><span key={set.id}>{set.weight} × {set.reps}</span>)}</div>}
-      <ExerciseMotion exerciseId={exercise.id}/>
+      {showImages&&<ExerciseImage exerciseId={exercise.id}/>}
      </div>}
     </details>;
    })}</div>

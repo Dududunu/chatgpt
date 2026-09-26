@@ -79,6 +79,7 @@ export type Settings={
  vibration:boolean;
  theme:"dark"|"light"|"system";
  hideMotion?:boolean;
+ showExerciseImages?:boolean;
  defaultRir?:string;
  defaultIncrement?:number;
 };

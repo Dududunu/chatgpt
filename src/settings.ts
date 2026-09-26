@@ -8,6 +8,7 @@ const defaults:Settings={
  vibration:true,
  theme:"dark",
  hideMotion:false,
+ showExerciseImages:true,
  defaultRir:"2",
  defaultIncrement:2.5
 };
@@ -19,6 +20,7 @@ export function normalizeSettings(value:Partial<Settings>|null|undefined):Settin
   ...value,
   id:"main",
   hideMotion:value?.hideMotion??defaults.hideMotion,
+  showExerciseImages:value?.showExerciseImages??!(value?.hideMotion??defaults.hideMotion),
   defaultRir:value?.defaultRir??defaults.defaultRir,
   defaultIncrement:value?.defaultIncrement??defaults.defaultIncrement
  };

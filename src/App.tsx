@@ -5,7 +5,7 @@ import { actual1rm, bestE1rm, e1rm, volume } from "./stats";
 import { adjustRestTimer, currentExerciseIndex, firstIncompleteSetIndex, isRestNotificationDue, navigateWorkoutExercise, nextExerciseAfterCompletedSet, nextRestTarget, normalizeSetForCompletion, restoreActiveWorkout, toFiniteNumber, toggleRestPause } from "./workoutLogic";
 import { createWorkoutSnapshot } from "./planLogic";
 import { defaultTemplates } from "./seed";
-import { ExerciseMotion } from "./ExerciseMotion";
+import { ExerciseImage } from "./ExerciseImage";
 const PlanScreen=lazy(()=>import("./PlanScreen").then(module=>({default:module.PlanScreen})));
 const HistoryScreen=lazy(()=>import("./HistoryScreen").then(module=>({default:module.HistoryScreen})));
 const ProgressScreen=lazy(()=>import("./ProgressScreen").then(module=>({default:module.ProgressScreen})));
@@ -44,7 +44,9 @@ export default function App(){
   ]);
   let storedActive=activeRows[0]||null;
   if(storedActive){const restored=restoreActiveWorkout(storedActive);if(restored!==storedActive){await db.active.put(restored);storedActive=restored}}
-  setTemplates(templateRows);setWorkouts(workoutRows);setActive(storedActive);setSettings(storedSettings||null);setBody(bodyRows);
+  const normalizedSettings=normalizeSettings(storedSettings??null);
+  if(!storedSettings||storedSettings.showExerciseImages===undefined)await db.settings.put(normalizedSettings);
+  setTemplates(templateRows);setWorkouts(workoutRows);setActive(storedActive);setSettings(normalizedSettings);setBody(bodyRows);
  }
 
  useEffect(()=>{
@@ -244,7 +246,7 @@ export default function App(){
   </header>
   <main>
    <Suspense fallback={<section className="section"><p className="muted">Otwieranie ekranu…</p></section>}>
-   {tab==="train"&&(active?<ActiveView active={active} now={now} settings={settings} previousSets={name=>previousSets(workouts,name)} setField={updateSetField} usePreviousWeight={usePreviousWeight} completeSet={completeSet} navigateExercise={navigateExercise} discard={discardWorkout} openTimer={()=>active.rest?setTimerOpen(true):setManualTimerOpen(true)} onShowMotion={()=>void saveSettings({hideMotion:false})}/>:<TrainHome templates={templates} workouts={workouts} active={active} onStart={startWorkout} onContinue={()=>setTab("train")}/>)}
+   {tab==="train"&&(active?<ActiveView active={active} now={now} settings={settings} previousSets={name=>previousSets(workouts,name)} setField={updateSetField} usePreviousWeight={usePreviousWeight} completeSet={completeSet} navigateExercise={navigateExercise} discard={discardWorkout} openTimer={()=>active.rest?setTimerOpen(true):setManualTimerOpen(true)}/>:<TrainHome templates={templates} workouts={workouts} active={active} onStart={startWorkout} onContinue={()=>setTab("train")}/>)}
    {tab==="plan"&&<PlanScreen settings={settings} templates={templates} workouts={workouts} active={active} onSave={saveTemplate} onCreate={createTemplate} onDelete={deleteTemplate} onStart={startWorkout} onContinue={()=>setTab("train")} notify={notify}/>}
    {tab==="history"&&<HistoryScreen workouts={workouts} catalog={exerciseCatalog(templates)} onSave={saveHistory} notify={notify}/>}
    {tab==="progress"&&<ProgressScreen workouts={workouts} body={body}/>}
@@ -271,7 +273,7 @@ function TrainHome({templates,workouts,active,onStart,onContinue}:{templates:Wor
   {!last&&<p className="empty-state">Po pierwszym treningu zobaczysz tu swoje ostatnie wyniki.</p>}
  </section>;
 }
-function ActiveView({active,now,settings,previousSets,setField,usePreviousWeight,completeSet,navigateExercise,discard,openTimer,onShowMotion}:{active:ActiveWorkout;now:number;settings:Settings|null;previousSets:(name:string)=>SetLog[];setField:(exerciseId:string,setId:string,field:Field,value:string)=>void;usePreviousWeight:(exerciseId:string,setId:string,weight:SetLog["weight"])=>void;completeSet:(exerciseId:string,setId:string)=>void;navigateExercise:(direction:-1|1)=>void;discard:()=>void;openTimer:()=>void;onShowMotion:()=>void}){
+function ActiveView({active,now,settings,previousSets,setField,usePreviousWeight,completeSet,navigateExercise,discard,openTimer}:{active:ActiveWorkout;now:number;settings:Settings|null;previousSets:(name:string)=>SetLog[];setField:(exerciseId:string,setId:string,field:Field,value:string)=>void;usePreviousWeight:(exerciseId:string,setId:string,weight:SetLog["weight"])=>void;completeSet:(exerciseId:string,setId:string)=>void;navigateExercise:(direction:-1|1)=>void;discard:()=>void;openTimer:()=>void}){
  const index=currentExerciseIndex(active),count=active.exercises.length,exercise=active.exercises[index];
  if(!exercise)return <section className="section"><Empty text="Ten trening nie ma już ćwiczeń."/><button className="quiet-button danger-text" onClick={discard}>Odrzuć trening</button></section>;
  const setIndex=firstIncompleteSetIndex(exercise),set=setIndex>=0?exercise.sets[setIndex]:null;
@@ -285,8 +287,7 @@ function ActiveView({active,now,settings,previousSets,setField,usePreviousWeight
   <div className="exercise-progress"><div><b>{index+1} / {count}</b><span>ćwiczeń</span></div><div className="progress-track" role="progressbar" aria-label="Postęp treningu" aria-valuemin={0} aria-valuemax={100} aria-valuenow={progress}><span style={{width:`${progress}%`}}/></div></div>
   <article className="current-exercise" key={exercise.templateExerciseId}>
    <div className="current-exercise-heading"><h2>{exercise.name}</h2><p>{exercise.target.sets} × {exercise.target.timed?"czas":`${exercise.target.repMin}–${exercise.target.repMax}`} <span>·</span> RIR {exercise.target.rir} <span>·</span> tempo {exercise.target.tempo}</p><small>PRZERWA {fmtDuration(exercise.target.restSec)}</small></div>
-   {!settings?.hideMotion&&<ExerciseMotion exerciseId={exercise.templateExerciseId}/>}
-   {settings?.hideMotion&&<button className="show-motion" onClick={onShowMotion}>Włącz podgląd ruchu</button>}
+   {settings?.showExerciseImages===true&&<ExerciseImage exerciseId={exercise.templateExerciseId}/>}
    <div className="set-progress" aria-label="Postęp serii">{exercise.sets.map((item,setNo)=><span key={item.id} className={item.completedAt?"done":setNo===setIndex?"current":""}>{item.completedAt?"✓":item.setNo}</span>)}</div>
    {set?<>
     <div className="set-context"><b>SERIA {set.setNo}</b>{previous.length>0?<div className="previous-results"><small>OSTATNIO</small><div>{previous.map(item=><button key={item.id} className="previous-result" onClick={()=>usePreviousWeight(exercise.templateExerciseId,set.id,item.weight)}><b>{item.weight??"—"} × {item.reps??"—"}</b></button>)}</div></div>:latestCompleted?<span className="last-set-note">Poprzednia seria: {latestCompleted.weight??"—"} × {latestCompleted.reps??"—"}</span>:<span className="last-set-note">Brak poprzedniego wyniku</span>}</div>

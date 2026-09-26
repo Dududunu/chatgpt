@@ -31,7 +31,7 @@ export function MoreScreen({databaseVersion,settings,body,onSaveSettings,onAddBo
    <Toggle label="Autostart przerwy" checked={settings.autoRest} onChange={autoRest=>void update({autoRest})}/>
    <Toggle label="Dźwięk po przerwie" checked={settings.sound} onChange={sound=>void update({sound})}/>
    <Toggle label="Wibracja po przerwie" checked={settings.vibration} onChange={vibration=>void update({vibration})}/>
-   <Toggle label="Ukryj podgląd ruchu" checked={settings.hideMotion??false} onChange={hideMotion=>void update({hideMotion})}/>
+   <Toggle label="Pokaż grafiki ćwiczeń" checked={settings.showExerciseImages??true} onChange={showExerciseImages=>void update({showExerciseImages})}/>
   </section>
   <section className="settings-section"><h3>Wygląd</h3><label className="setting-row"><span><b>Motyw</b></span><select value={settings.theme} onChange={event=>void update({theme:event.target.value as Settings["theme"]})}><option value="dark">Ciemny</option><option value="light">Jasny</option><option value="system">Systemowy</option></select></label></section>
   <section className="settings-section body-section"><h3>Pomiary ciała</h3><form className="body-form" onSubmit={saveBody}>
