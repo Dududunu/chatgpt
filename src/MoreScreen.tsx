@@ -1,12 +1,12 @@
 import { useState } from "react";
 import type { BodyEntry, Settings } from "./types";
 
-type Props={databaseVersion:number;settings:Settings|null;body:BodyEntry[];onSaveSettings:(patch:Partial<Settings>)=>Promise<void>;onAddBody:(entry:BodyEntry)=>Promise<void>;exportJson:()=>Promise<void>;importJson:(file:File)=>Promise<void>;exportCsv:()=>Promise<void>;notify:(message:string)=>void};
+type Props={databaseVersion:number;settings:Settings|null;body:BodyEntry[];accountEmail:string;syncStatus:"syncing"|"synced"|"offline"|"error";onSyncNow:()=>Promise<void>;onSignOut:()=>Promise<void>;onSaveSettings:(patch:Partial<Settings>)=>Promise<void>;onAddBody:(entry:BodyEntry)=>Promise<void>;exportJson:()=>Promise<void>;importJson:(file:File)=>Promise<void>;exportCsv:()=>Promise<void>;notify:(message:string)=>void};
 const id=()=>crypto.randomUUID();
 const date=(time:number)=>new Intl.DateTimeFormat("pl-PL",{day:"numeric",month:"short",year:"numeric"}).format(time);
 const parse=(raw:string)=>{if(!raw.trim())return null;const value=Number(raw.trim().replace(",","."));return Number.isFinite(value)&&value>=0?value:null};
 
-export function MoreScreen({databaseVersion,settings,body,onSaveSettings,onAddBody,exportJson,importJson,exportCsv,notify}:Props){
+export function MoreScreen({databaseVersion,settings,body,accountEmail,syncStatus,onSyncNow,onSignOut,onSaveSettings,onAddBody,exportJson,importJson,exportCsv,notify}:Props){
  const [weight,setWeight]=useState("");
  const [waist,setWaist]=useState("");
  const [chest,setChest]=useState("");
@@ -24,6 +24,11 @@ export function MoreScreen({databaseVersion,settings,body,onSaveSettings,onAddBo
  }
  return <section className="section more-screen">
   <div className="section-heading"><div><h2>Więcej</h2><p>Ustawienia, pomiary i kopie danych.</p></div></div>
+  <section className="settings-section account-section"><h3>Konto</h3>
+   <div className="account-row"><span><b>{accountEmail}</b><small>{syncLabel(syncStatus)}</small></span><span className={`sync-dot ${syncStatus}`} aria-hidden="true"/></div>
+   <button className="data-action" onClick={()=>void onSyncNow()}>Synchronizuj teraz <span>›</span></button>
+   <button className="data-action danger-text" onClick={()=>void onSignOut()}>Wyloguj <span>›</span></button>
+  </section>
   <section className="settings-section"><h3>Trening</h3>
    <label className="setting-row"><span><b>Domyślna przerwa</b><small>Używana dla nowych ćwiczeń</small></span><span className="setting-input"><input type="number" inputMode="numeric" min="0" max="1800" value={settings.defaultRestSec} onChange={event=>void update({defaultRestSec:bounded(event.target.value,0,1800,120)})}/> s</span></label>
    <label className="setting-row"><span><b>Domyślne RIR</b><small>Podpowiedź w nowych planach</small></span><input className="short-setting-input" inputMode="numeric" value={settings.defaultRir??"2"} onChange={event=>void update({defaultRir:event.target.value})}/></label>
@@ -52,3 +57,5 @@ export function MoreScreen({databaseVersion,settings,body,onSaveSettings,onAddBo
 function Toggle({label,checked,onChange}:{label:string;checked:boolean;onChange:(value:boolean)=>void}){return <label className="setting-row"><b>{label}</b><input className="toggle" type="checkbox" checked={checked} onChange={event=>onChange(event.target.checked)}/></label>}
 function bounded(raw:string,min:number,max:number,fallback:number){const value=Number(raw);return Number.isFinite(value)?Math.max(min,Math.min(max,Math.trunc(value))):fallback}
 function boundedFloat(raw:string,min:number,max:number,fallback:number){const value=Number(raw.replace(",","."));return Number.isFinite(value)?Math.max(min,Math.min(max,value)):fallback}
+
+function syncLabel(status:Props["syncStatus"]){return status==="synced"?"Dane zsynchronizowane":status==="syncing"?"Synchronizacja…":status==="offline"?"Offline · zmiany zapisują się lokalnie":"Błąd synchronizacji"}
