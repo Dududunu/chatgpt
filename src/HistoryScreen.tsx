@@ -9,20 +9,27 @@ const date=(timestamp:number)=>new Intl.DateTimeFormat("pl-PL",{day:"numeric",mo
 const dateTimeValue=(timestamp:number)=>{const d=new Date(timestamp);return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}T${String(d.getHours()).padStart(2,"0")}:${String(d.getMinutes()).padStart(2,"0")}`};
 
 export function HistoryScreen({workouts,catalog,onSave,notify}:Props){
- const [editingId,setEditingId]=useState<string|null>(null);
- const selected=workouts.find(workout=>workout.id===editingId)||null;
+ const [selectedId,setSelectedId]=useState<string|null>(null);
+ const [editing,setEditing]=useState(false);
+ const selected=workouts.find(workout=>workout.id===selectedId)||null;
+ if(selected){
+  const completed=selected.exercises.reduce((count,exercise)=>count+exercise.sets.filter(set=>set.completedAt).length,0);
+  const seconds=Math.max(0,Math.floor((selected.endedAt-selected.startedAt)/1000));
+  return <section className="section history-screen">
+   <button className="back-link" onClick={()=>{setSelectedId(null);setEditing(false)}}>← Historia</button>
+   <header className="history-detail-heading"><span className="eyebrow">{date(selected.startedAt)}</span><h2>{selected.name}</h2><p>{duration(seconds)} · {completed} serii · {Math.round(volume(selected)).toLocaleString("pl-PL")} kg</p></header>
+   {editing?<HistoryEditor workout={selected} catalog={catalog} onCancel={()=>setEditing(false)} onSave={async value=>{await onSave(value);setEditing(false);notify("Historia treningu zaktualizowana")}} notify={notify}/>:<>
+    <div className="history-exercises history-detail-exercises">{selected.exercises.map(exercise=><article className="history-exercise" key={`${exercise.templateExerciseId}-${exercise.name}`}><h3>{exercise.name}</h3><div>{exercise.sets.filter(set=>set.completedAt).map(set=><span key={set.id}>Seria {set.setNo} · {set.weight} kg × {set.reps}{set.rir!==null?` · RIR ${set.rir}`:""}</span>)}</div></article>)}</div>
+    <button className="quiet-button history-edit" onClick={()=>setEditing(true)}>Edytuj trening</button>
+   </>}
+  </section>;
+ }
  return <section className="section history-screen">
   <div className="section-heading"><div><h2>Historia</h2><p>Każdy trening zachowuje własny snapshot planu.</p></div></div>
-  {!workouts.length?<p className="empty-state">Zakończony trening pojawi się tutaj.</p>:<div className="history-list">{workouts.map(workout=>{
+  {!workouts.length?<p className="empty-state">Nie masz jeszcze treningów. Zakończony trening pojawi się tutaj.</p>:<div className="history-list">{workouts.map(workout=>{
    const completed=workout.exercises.reduce((count,exercise)=>count+exercise.sets.filter(set=>set.completedAt).length,0);
    const seconds=Math.max(0,Math.floor((workout.endedAt-workout.startedAt)/1000));
-   return <details className="history-item" key={workout.id} open={editingId===workout.id} onToggle={event=>{if(!event.currentTarget.open&&editingId===workout.id)setEditingId(null)}}>
-    <summary><div><b>{workout.name}</b><span>{date(workout.startedAt)}</span></div><div className="history-summary-meta"><b>{duration(seconds)}</b><span>{completed} serii · {Math.round(volume(workout)).toLocaleString("pl-PL")} kg</span></div></summary>
-    {editingId===workout.id&&selected?<HistoryEditor workout={selected} catalog={catalog} onCancel={()=>setEditingId(null)} onSave={async value=>{await onSave(value);setEditingId(null);notify("Historia treningu zaktualizowana")}} notify={notify}/>:<>
-     <div className="history-exercises">{workout.exercises.map(exercise=><div className="history-exercise" key={`${exercise.templateExerciseId}-${exercise.name}`}><h3>{exercise.name}</h3><div>{exercise.sets.filter(set=>set.completedAt).map(set=><span key={set.id}>{set.weight} kg × {set.reps}{set.rir!==null?` · RIR ${set.rir}`:""}</span>)}</div></div>)}</div>
-     <button className="quiet-button history-edit" onClick={()=>setEditingId(workout.id)}>Edytuj trening</button>
-    </>}
-   </details>;
+   return <button className="history-item" key={workout.id} onClick={()=>setSelectedId(workout.id)}><span className="history-item-main"><b>{workout.name}</b><small>{date(workout.startedAt)}</small></span><span className="history-summary-meta"><b>{duration(seconds)}</b><small>{completed} serii · {Math.round(volume(workout)).toLocaleString("pl-PL")} kg</small></span><span className="history-chevron" aria-hidden="true">›</span></button>;
   })}</div>}
  </section>;
 }

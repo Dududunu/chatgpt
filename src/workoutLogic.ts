@@ -108,6 +108,7 @@ export function nextExerciseAfterCompletedSet(workout:ActiveWorkout,exerciseInde
 }
 
 export function adjustRestTimer(rest:RestState,deltaSeconds:number,now:number):RestState{
+ if(rest.pausedRemaining===undefined&&rest.endsAt<=now)return rest;
  const adjusted={...rest};
  if(adjusted.pausedRemaining!==undefined){
   adjusted.pausedRemaining=Math.max(0,adjusted.pausedRemaining+deltaSeconds*1000);
@@ -119,8 +120,15 @@ export function adjustRestTimer(rest:RestState,deltaSeconds:number,now:number):R
 }
 
 export function toggleRestPause(rest:RestState,now:number):RestState{
+ if(rest.pausedRemaining===undefined&&rest.endsAt<=now)return rest;
  const toggled={...rest};
  if(toggled.pausedRemaining!==undefined){
+  if(toggled.pausedRemaining===0){
+   toggled.endsAt=now;
+   toggled.notifiedAt??=now;
+   delete toggled.pausedRemaining;
+   return toggled;
+  }
   toggled.endsAt=now+toggled.pausedRemaining;
   delete toggled.pausedRemaining;
   delete toggled.notifiedAt;

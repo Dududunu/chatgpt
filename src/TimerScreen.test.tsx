@@ -15,18 +15,26 @@ const actions={onClose:()=>{},onAdjust:()=>{},onPause:()=>{},onSkip:()=>{}};
 
 describe("rest timer screen",()=>{
  it("renders the timer, next set, previous result, and controls",()=>{
-  const html=renderToStaticMarkup(createElement(TimerScreen,{rest,remaining:43_000,active,...actions}));
+  const html=renderToStaticMarkup(createElement(TimerScreen,{rest,remaining:43_000,now:17_000,active,...actions}));
   expect(html).toContain("00:43");
   expect(html).toContain("Bench Press · seria 2");
   expect(html).toContain("Ostatnio: 80 × 5");
-  expect(html).toContain("Sugestia: 80 kg × 6");
+  expect(html).toContain("80 kg × 6");
+  expect(html).toContain("propozycja na podstawie poprzedniej serii");
   expect(html).toContain("−30 sek.");
   expect(html).toContain("+30 sek.");
   expect(html).toContain("Pomiń przerwę");
  });
  it("renders a manual timer without implying a workout set",()=>{
-  const html=renderToStaticMarkup(createElement(TimerScreen,{rest:{...rest,kind:"manual",exerciseName:"Timer"},remaining:90_000,active,...actions}));
+  const html=renderToStaticMarkup(createElement(TimerScreen,{rest:{...rest,kind:"manual",exerciseName:"Timer"},remaining:90_000,now:0,active,...actions}));
   expect(html).toContain("Timer ręczny");
   expect(html).not.toContain("NASTĘPNIE");
+ });
+ it("keeps the full screen visible after expiry until the user returns",()=>{
+  const html=renderToStaticMarkup(createElement(TimerScreen,{rest,remaining:0,now:60_000,active,...actions}));
+  expect(html).toContain("PRZERWA ZAKOŃCZONA");
+  expect(html).toContain("Wróć do serii");
+  expect(html).not.toContain("Pomiń przerwę");
+  expect(html).toContain("disabled=\"\"");
  });
 });

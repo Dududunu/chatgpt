@@ -30,6 +30,7 @@ export function PlanScreen({settings,templates,workouts,active,onSave,onCreate,o
  const [selectedId,setSelectedId]=useState<string|null>(null);
  const [createOpen,setCreateOpen]=useState(false);
  const [newName,setNewName]=useState("");
+ const [renameDraft,setRenameDraft]=useState<{id:string;name:string}|null>(null);
  const [libraryQuery,setLibraryQuery]=useState("");
  const [dragId,setDragId]=useState<string|null>(null);
  const [draft,setDraft]=useState<WorkoutTemplate|null>(null);
@@ -57,6 +58,12 @@ export function PlanScreen({settings,templates,workouts,active,onSave,onCreate,o
  async function deleteTemplate(template:WorkoutTemplate){
   if(!confirm(`Usunąć plan „${template.name}”? Zapisane treningi pozostaną w historii.`))return;
   await onDelete(template.id);setSelectedId(null);setDraft(null);notify("Plan usunięty");
+ }
+ async function saveRename(event:React.FormEvent){
+  event.preventDefault();if(!renameDraft)return;
+  const template=templates.find(item=>item.id===renameDraft.id);const name=renameDraft.name.trim();
+  if(!template||!name){notify("Wpisz nazwę treningu");return}
+  await onSave({...template,name});setRenameDraft(null);notify("Nazwa treningu zmieniona");
  }
  function changeDraft(next:WorkoutTemplate){setDraft(next)}
 
@@ -91,17 +98,23 @@ export function PlanScreen({settings,templates,workouts,active,onSave,onCreate,o
      </div>
      <details className="exercise-edit-details"><summary>Edytuj ustawienia</summary>
       <div className="edit-fields">
-       <label className="field-label span-two">NAZWA<input value={exercise.name} onChange={event=>changeDraft(updateTemplateExercise(draft,exercise.id,{name:event.target.value}))}/></label>
-       <label className="field-label">SERIE<input type="number" inputMode="numeric" min="1" max="20" value={exercise.sets} onChange={event=>changeDraft(updateTemplateExercise(draft,exercise.id,{sets:boundedInt(event.target.value,1,20,exercise.sets)}))}/></label>
-       <label className="field-label">RIR<input value={exercise.rir} onChange={event=>changeDraft(updateTemplateExercise(draft,exercise.id,{rir:event.target.value}))}/></label>
-       <label className="field-label">POWT. OD<input type="number" inputMode="numeric" min="0" max="300" value={exercise.repMin} onChange={event=>changeDraft(updateTemplateExercise(draft,exercise.id,{repMin:boundedInt(event.target.value,0,300,exercise.repMin)}))}/></label>
-       <label className="field-label">POWT. DO<input type="number" inputMode="numeric" min="0" max="300" value={exercise.repMax} onChange={event=>changeDraft(updateTemplateExercise(draft,exercise.id,{repMax:boundedInt(event.target.value,0,300,exercise.repMax)}))}/></label>
-       <label className="field-label">TEMPO<input value={exercise.tempo} onChange={event=>changeDraft(updateTemplateExercise(draft,exercise.id,{tempo:event.target.value}))}/></label>
-       <label className="field-label">PRZERWA (SEK.)<input type="number" inputMode="numeric" min="0" max="1800" value={exercise.restSec} onChange={event=>changeDraft(updateTemplateExercise(draft,exercise.id,{restSec:boundedInt(event.target.value,0,1800,exercise.restSec)}))}/></label>
-       <label className="field-label">KROK (KG)<input type="number" inputMode="decimal" min="0.1" step="0.1" value={exercise.minIncrement??2.5} onChange={event=>changeDraft(updateTemplateExercise(draft,exercise.id,{minIncrement:boundedFloat(event.target.value,0.1,100,exercise.minIncrement??2.5)}))}/></label>
-       <label className="field-label">SUPER SERIA<select value={exercise.superset??""} onChange={event=>changeDraft(updateTemplateExercise(draft,exercise.id,{superset:event.target.value||undefined}))}><option value="">Brak</option>{groups.map((group,groupIndex)=><option key={group} value={group}>Grupa {String.fromCharCode(65+groupIndex)}</option>)}</select></label>
-       <label className="switch-row span-two">Ćwiczenie na czas<input type="checkbox" checked={Boolean(exercise.timed)} onChange={event=>changeDraft(updateTemplateExercise(draft,exercise.id,{timed:event.target.checked}))}/></label>
-       <label className="switch-row span-two">Na każdą stronę<input type="checkbox" checked={Boolean(exercise.perLeg)} onChange={event=>changeDraft(updateTemplateExercise(draft,exercise.id,{perLeg:event.target.checked}))}/></label>
+       <fieldset className="editor-field-group span-two"><legend>Podstawowe</legend>
+        <label className="field-label span-two">NAZWA<input value={exercise.name} onChange={event=>changeDraft(updateTemplateExercise(draft,exercise.id,{name:event.target.value}))}/></label>
+        <label className="field-label">SERIE<input type="number" inputMode="numeric" min="1" max="20" value={exercise.sets} onChange={event=>changeDraft(updateTemplateExercise(draft,exercise.id,{sets:boundedInt(event.target.value,1,20,exercise.sets)}))}/></label>
+        <label className="field-label">POWT. OD<input type="number" inputMode="numeric" min="0" max="300" value={exercise.repMin} onChange={event=>changeDraft(updateTemplateExercise(draft,exercise.id,{repMin:boundedInt(event.target.value,0,300,exercise.repMin)}))}/></label>
+        <label className="field-label">POWT. DO<input type="number" inputMode="numeric" min="0" max="300" value={exercise.repMax} onChange={event=>changeDraft(updateTemplateExercise(draft,exercise.id,{repMax:boundedInt(event.target.value,0,300,exercise.repMax)}))}/></label>
+       </fieldset>
+       <fieldset className="editor-field-group span-two"><legend>Intensywność</legend>
+        <label className="field-label">RIR<input value={exercise.rir} onChange={event=>changeDraft(updateTemplateExercise(draft,exercise.id,{rir:event.target.value}))}/></label>
+        <label className="field-label">TEMPO<input value={exercise.tempo} onChange={event=>changeDraft(updateTemplateExercise(draft,exercise.id,{tempo:event.target.value}))}/></label>
+        <label className="field-label">KROK (KG)<input type="number" inputMode="decimal" min="0.1" step="0.1" value={exercise.minIncrement??2.5} onChange={event=>changeDraft(updateTemplateExercise(draft,exercise.id,{minIncrement:boundedFloat(event.target.value,0.1,100,exercise.minIncrement??2.5)}))}/></label>
+        <label className="field-label">SUPER SERIA<select value={exercise.superset??""} onChange={event=>changeDraft(updateTemplateExercise(draft,exercise.id,{superset:event.target.value||undefined}))}><option value="">Brak</option>{groups.map((group,groupIndex)=><option key={group} value={group}>Grupa {String.fromCharCode(65+groupIndex)}</option>)}</select></label>
+        <label className="switch-row span-two">Ćwiczenie na czas<input type="checkbox" checked={Boolean(exercise.timed)} onChange={event=>changeDraft(updateTemplateExercise(draft,exercise.id,{timed:event.target.checked}))}/></label>
+        <label className="switch-row span-two">Na każdą stronę<input type="checkbox" checked={Boolean(exercise.perLeg)} onChange={event=>changeDraft(updateTemplateExercise(draft,exercise.id,{perLeg:event.target.checked}))}/></label>
+       </fieldset>
+       <fieldset className="editor-field-group span-two"><legend>Przerwa</legend>
+        <label className="field-label">CZAS (SEK.)<input type="number" inputMode="numeric" min="0" max="1800" value={exercise.restSec} onChange={event=>changeDraft(updateTemplateExercise(draft,exercise.id,{restSec:boundedInt(event.target.value,0,1800,exercise.restSec)}))}/></label>
+       </fieldset>
        <button className="quiet-button danger-text remove-exercise" onClick={()=>changeDraft(removeTemplateExercise(draft,exercise.id))}>Usuń ćwiczenie</button>
       </div>
      </details>
@@ -117,10 +130,19 @@ export function PlanScreen({settings,templates,workouts,active,onSave,onCreate,o
   <div className="section-heading"><div><h2>Plan treningowy</h2><p>Szablony edytujesz niezależnie od zapisanej historii.</p></div><button className="primary compact" onClick={()=>setCreateOpen(value=>!value)}>+ Nowy trening</button></div>
   {active&&<button className="continue-workout" onClick={onContinue}><span><b>Kontynuuj trening</b><small>{active.name} · {active.exercises.filter(exercise=>exercise.sets.some(set=>set.completedAt)).length} ćwiczeń rozpoczętych</small></span><span>→</span></button>}
   {createOpen&&<form className="create-plan" onSubmit={event=>{event.preventDefault();void createTemplate()}}><label className="field-label">NAZWA NOWEGO TRENINGU<input autoFocus value={newName} onChange={event=>setNewName(event.target.value)} placeholder="np. PUSH" maxLength={36}/></label><button className="primary" type="submit">Utwórz trening</button></form>}
-  <div className="plan-list">{templates.map(template=><div className="plan-row" key={template.id}>
-   <button className="plan-open" onClick={()=>openTemplate(template)}><span><b>{template.name}</b><small>{template.exercises.length} ćwiczeń</small></span><span aria-hidden="true">›</span></button>
-   <button className="quiet-button" aria-label={`Rozpocznij ${template.name}`} disabled={Boolean(active)} onClick={()=>onStart(template)}>Start</button>
-  </div>)}</div>
+  {renameDraft&&<form className="rename-plan" onSubmit={event=>void saveRename(event)}><label className="field-label">Zmień nazwę<input autoFocus maxLength={36} value={renameDraft.name} onChange={event=>setRenameDraft({...renameDraft,name:event.target.value})}/></label><button className="primary compact" type="submit">Zapisz</button><button className="quiet-button" type="button" onClick={()=>setRenameDraft(null)}>Anuluj</button></form>}
+  {!templates.length?<p className="empty-state">Dodaj swój pierwszy plan treningowy.</p>:<div className="plan-list">{templates.map(template=>{
+   const last=workouts.find(workout=>workout.templateId===template.id);
+   return <div className="plan-row" key={template.id}>
+    <button className="plan-open" onClick={()=>openTemplate(template)}><span><b>{template.name}</b><small>{template.exercises.length} ćwiczeń · ~{Math.max(15,Math.round(template.exercises.length*8))} min · {last?`ostatnio ${relativeDate(last.startedAt)}`:"bez historii"}</small></span><span aria-hidden="true">›</span></button>
+    <button className="plan-start" aria-label={`Rozpocznij ${template.name}`} disabled={Boolean(active)} onClick={()=>onStart(template)}>Start</button>
+    <details className="plan-menu"><summary aria-label={`Więcej opcji dla ${template.name}`}>···</summary><div>
+     <button onClick={()=>void duplicate(template)}>Duplikuj</button>
+     <button onClick={()=>setRenameDraft({id:template.id,name:template.name})}>Zmień nazwę</button>
+     <button className="danger-text" onClick={()=>void deleteTemplate(template)}>Usuń</button>
+    </div></details>
+   </div>;
+  })}</div>}
   <Library catalog={catalog} workouts={workouts} query={libraryQuery} onQuery={setLibraryQuery} filtered={filtered} showImages={settings?.showExerciseImages===true}/>
  </section>;
 }
@@ -186,5 +208,6 @@ function Library({catalog,workouts,query,onQuery,filtered,showImages}:{catalog:E
 
 const time=(seconds:number)=>`${Math.floor(seconds/60)}:${String(seconds%60).padStart(2,"0")}`;
 const date=(timestamp:number)=>new Intl.DateTimeFormat("pl-PL",{day:"numeric",month:"short"}).format(timestamp);
+function relativeDate(timestamp:number){const today=new Date();today.setHours(0,0,0,0);const day=new Date(timestamp);day.setHours(0,0,0,0);const days=Math.max(0,Math.floor((today.getTime()-day.getTime())/86_400_000));return days===0?"dzisiaj":days===1?"wczoraj":days<7?`${days} dni temu`:date(timestamp)}
 function boundedInt(value:string,min:number,max:number,fallback:number){const parsed=Number(value);return Number.isFinite(parsed)?Math.max(min,Math.min(max,Math.trunc(parsed))):fallback}
 function boundedFloat(value:string,min:number,max:number,fallback:number){const parsed=Number(value.replace(",","."));return Number.isFinite(parsed)?Math.max(min,Math.min(max,parsed)):fallback}

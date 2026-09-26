@@ -41,17 +41,23 @@ export function ProgressScreen({workouts,body}:{workouts:WorkoutHistory[];body:B
  const benchName="Wyciskanie sztangi na ławce płaskiej";
  const prs=recentPrCount(workouts);
  const actual=actual1rm(workouts,benchName),estimated=bestE1rm(workouts,benchName);
+ const highlights=names.map(name=>{
+  const sessions=workouts.map(workout=>({workout,value:workout.exercises.filter(exercise=>exercise.name===name&&!exercise.target.timed).flatMap(exercise=>exercise.sets.map(validStrengthSet).filter((set):set is {weight:number;reps:number}=>Boolean(set))).reduce((best,set)=>Math.max(best,e1rm(set.weight,set.reps)),0)})).filter(item=>item.value>0).sort((a,b)=>a.workout.startedAt-b.workout.startedAt);
+  if(!sessions.length)return null;
+  const latest=sessions.at(-1)!;
+  return {name,value:latest.value,change:latest.value-sessions[0].value};
+ }).filter((item):item is {name:string;value:number;change:number}=>Boolean(item)).sort((a,b)=>b.value-a.value).slice(0,4);
  const label=mode==="body"?"Masa ciała (kg)":mode==="volume"?"Objętość treningu (kg)":mode==="best"?`${activeName||"Ćwiczenie"} · najlepszy ciężar (kg)`: `${activeName||"Ćwiczenie"} · e1RM (kg)`;
  return <section className="section progress-screen">
   <div className="section-heading"><div><h2>Progres</h2><p>Wyniki liczone z zapisanych serii.</p></div></div>
-  <div className="metric-strip">
+  <div className="metric-strip progress-summary">
    <div><small>TRENINGI · 30 DNI</small><b>{recent.length}</b></div>
    <div><small>OBJĘTOŚĆ · 30 DNI</small><b>{Math.round(recent.reduce((sum,workout)=>sum+volume(workout),0)).toLocaleString("pl-PL")} kg</b></div>
    <div><small>NOWE PR · 30 DNI</small><b>{prs}</b></div>
-   <div><small>MASA CIAŁA</small><b>{latestBody==null?"—":`${latestBody} kg`}</b></div>
-   <div><small>BENCH · ACTUAL 1RM</small><b>{actual?`${actual} kg`:"—"}</b></div>
-   <div><small>BENCH · e1RM</small><b>{estimated?`${estimated.toFixed(1)} kg`:"—"}</b></div>
   </div>
+  <div className="progress-quick-stats"><span>Masa ciała <b>{latestBody==null?"—":`${latestBody} kg`}</b></span><span>Bench · actual 1RM <b>{actual?`${actual} kg`:"—"}</b></span><span>Bench · e1RM <b>{estimated?`${estimated.toFixed(1)} kg`:"—"}</b></span></div>
+  {highlights.length>0&&<section className="exercise-highlights"><div className="chart-title"><h3>Najważniejsze ćwiczenia</h3></div>{highlights.map(item=><div className="exercise-highlight" key={item.name}><span><b>{item.name}</b><small>e1RM · od pierwszego zapisu</small></span><span><b>{item.value.toFixed(1)} kg</b><small className={item.change>0?"positive-change":""}>{item.change>0?"+":""}{item.change.toFixed(1)} kg</small></span></div>)}</section>}
+  {!workouts.length&&!body.length&&<p className="empty-state">Po kilku treningach pokażemy tutaj Twój progres.</p>}
   <div className="chart-section">
    <div className="chart-title"><h3>{label}</h3><span>{chartData.length} punktów</span></div>
    <div className="chart-controls">

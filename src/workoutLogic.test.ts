@@ -138,13 +138,18 @@ describe("rest timer controls",()=>{
   const resumed=toggleRestPause(shortened,20_000);
   expect(resumed.endsAt).toBe(40_000);
   expect(resumed.pausedRemaining).toBeUndefined();
-  expect(adjustRestTimer({...rest,notifiedAt:30_000},30,30_000).notifiedAt).toBeUndefined();
+  expect(adjustRestTimer({...rest,notifiedAt:30_000},30,30_000).notifiedAt).toBe(30_000);
  });
 
  it("clamps a shortened timer at zero and only signals once after expiry",()=>{
-  expect(adjustRestTimer({...rest,endsAt:5_000},-30,10_000).endsAt).toBe(10_000);
+  expect(adjustRestTimer({...rest,endsAt:5_000},-30,10_000).endsAt).toBe(5_000);
+  expect(adjustRestTimer({...rest,pausedRemaining:10_000},-30,10_000).pausedRemaining).toBe(0);
   expect(isRestNotificationDue(rest,30_000)).toBe(true);
   expect(isRestNotificationDue({...rest,notifiedAt:30_000},31_000)).toBe(false);
   expect(isRestNotificationDue({...rest,pausedRemaining:0},31_000)).toBe(false);
+  const resumed=toggleRestPause({...rest,pausedRemaining:0},31_000);
+  expect(resumed.pausedRemaining).toBeUndefined();
+  expect(resumed.notifiedAt).toBe(31_000);
+  expect(isRestNotificationDue(resumed,31_000)).toBe(false);
  });
 });

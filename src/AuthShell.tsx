@@ -3,6 +3,7 @@ import type { Session } from "@supabase/supabase-js";
 import App from "./App";
 import { prepareCloudUser, pushCloudState, startAutoSync, type CloudSyncStatus } from "./cloudSync";
 import { supabase } from "./supabase";
+import { authErrorMessage, signOutWithSync } from "./authMessages";
 
 export default function AuthShell(){
  const [session,setSession]=useState<Session|null|undefined>(undefined);
@@ -38,10 +39,10 @@ export default function AuthShell(){
  }
 
  async function signOut(){
-  if(session?.user&&navigator.onLine){
-   try{await pushCloudState(session.user.id)}catch{}
-  }
-  await supabase.auth.signOut();
+  await signOutWithSync(navigator.onLine,
+   ()=>session?.user?pushCloudState(session.user.id):Promise.resolve(),
+   async()=>{const {error}=await supabase.auth.signOut();if(error)throw error}
+  );
  }
 
  if(session===undefined)return <div className="auth-shell"><p>Ładowanie…</p></div>;
@@ -51,8 +52,8 @@ export default function AuthShell(){
  return <App accountEmail={session.user.email??"Konto"} syncStatus={syncStatus} onSyncNow={syncNow} onSignOut={signOut}/>;
 }
 
-function AuthScreen(){
- const [mode,setMode]=useState<"login"|"signup">("login");
+export function AuthScreen({initialMode="login"}:{initialMode?:"login"|"signup"}){
+ const [mode,setMode]=useState<"login"|"signup">(initialMode);
  const [email,setEmail]=useState("");
  const [password,setPassword]=useState("");
  const [busy,setBusy]=useState(false);
@@ -71,14 +72,14 @@ function AuthScreen(){
     if(!data.session)setMessage("Konto utworzone. Sprawdź e-mail i potwierdź rejestrację.");
    }
   }catch(error){
-   setMessage(error instanceof Error?error.message:"Nie udało się zalogować.");
+   setMessage(authErrorMessage(error));
   }finally{setBusy(false)}
  }
 
  return <div className="auth-shell"><form className="auth-card" onSubmit={submit}>
-  <span className="eyebrow">GYM PWA</span>
+  <span className="eyebrow">GYM</span>
   <h1>{mode==="login"?"Zaloguj się":"Utwórz konto"}</h1>
-  <p>{mode==="login"?"Twój plan i progres są przypisane do konta.":"Każdy użytkownik ma oddzielny plan, historię i progres."}</p>
+  <p>{mode==="login"?"Twój trening. Twój progres.":"Zapisz plan, historię i progres na swoim koncie."}</p>
   <label className="field-label">EMAIL<input type="email" autoComplete="email" required value={email} onChange={event=>setEmail(event.target.value)}/></label>
   <label className="field-label">HASŁO<input type="password" autoComplete={mode==="login"?"current-password":"new-password"} minLength={6} required value={password} onChange={event=>setPassword(event.target.value)}/></label>
   {message&&<p className="auth-message" role="status">{message}</p>}

@@ -41,6 +41,9 @@ export type RestState={
  exerciseName:string;
  nextExerciseId?:string;
  nextSet:number;
+ completedExerciseName?:string;
+ completedSetNo?:number;
+ completedSetTotal?:number;
  startedAt:number;
  endsAt:number;
  kind?:"rest"|"manual";

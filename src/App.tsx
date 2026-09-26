@@ -6,6 +6,8 @@ import { adjustRestTimer, currentExerciseIndex, firstIncompleteSetIndex, isRestN
 import { createWorkoutSnapshot } from "./planLogic";
 import { defaultTemplates } from "./seed";
 import { ExerciseImage } from "./ExerciseImage";
+import { AppIcon, type AppIconName } from "./AppIcons";
+import { createManualRest, remainingRestMs, restSessionKey, shouldShowFullscreenTimer } from "./timerLogic";
 const PlanScreen=lazy(()=>import("./PlanScreen").then(module=>({default:module.PlanScreen})));
 const HistoryScreen=lazy(()=>import("./HistoryScreen").then(module=>({default:module.HistoryScreen})));
 const ProgressScreen=lazy(()=>import("./ProgressScreen").then(module=>({default:module.ProgressScreen})));
@@ -32,7 +34,7 @@ export default function App({accountEmail,syncStatus,onSyncNow,onSignOut}:AppPro
  const [body,setBody]=useState<BodyEntry[]>([]);
  const [now,setNow]=useState(Date.now());
  const [toast,setToast]=useState("");
- const [timerOpen,setTimerOpen]=useState(false);
+ const [dismissedRestKey,setDismissedRestKey]=useState<string|null>(null);
  const [manualTimerOpen,setManualTimerOpen]=useState(false);
  const audioContextRef=useRef<AudioContext|null>(null);
  const startingRef=useRef(false);
@@ -52,8 +54,14 @@ export default function App({accountEmail,syncStatus,onSyncNow,onSignOut}:AppPro
  }
 
  useEffect(()=>{
-  const light=settings?.theme==="light"||(settings?.theme==="system"&&window.matchMedia("(prefers-color-scheme: light)").matches);
-  document.querySelector('meta[name="theme-color"]')?.setAttribute("content",light?"#f6f6f3":"#0b0c0b");
+  const media=window.matchMedia("(prefers-color-scheme: light)");
+  const applyTheme=()=>{
+   const light=settings?.theme==="light"||(settings?.theme==="system"&&media.matches);
+   document.documentElement.style.setProperty("--page-bg",light?"#f6f6f3":"#0b0c0b");
+   document.querySelector('meta[name="theme-color"]')?.setAttribute("content",light?"#f6f6f3":"#0b0c0b");
+  };
+  applyTheme();media.addEventListener("change",applyTheme);
+  return()=>media.removeEventListener("change",applyTheme);
  },[settings?.theme]);
 
  useEffect(()=>{
@@ -161,7 +169,7 @@ export default function App({accountEmail,syncStatus,onSyncNow,onSignOut}:AppPro
     if(settings?.autoRest!==false&&restTarget){
      const startedAt=Date.now(),endsAt=startedAt+exercise.target.restSec*1000;
      set.restStartedAt=startedAt;set.restEndsAt=endsAt;
-     workout.rest={kind:"rest",exerciseName:restTarget.exerciseName,nextExerciseId:restTarget.exerciseId,nextSet:restTarget.setNo,startedAt,endsAt};
+     workout.rest={kind:"rest",exerciseName:restTarget.exerciseName,nextExerciseId:restTarget.exerciseId,nextSet:restTarget.setNo,completedExerciseName:exercise.name,completedSetNo:set.setNo,completedSetTotal:exercise.target.sets,startedAt,endsAt};
     }
     if(supersetNextId)workout.currentExerciseId=supersetNextId;
     return workout;
@@ -184,12 +192,12 @@ export default function App({accountEmail,syncStatus,onSyncNow,onSignOut}:AppPro
  }
  async function adjustRest(delta:number){await changeRest(rest=>adjustRestTimer(rest,delta,Date.now()))}
  async function pauseRest(){await changeRest(rest=>toggleRestPause(rest,Date.now()))}
- async function skipRest(){await changeRest(()=>null);setTimerOpen(false)}
+ async function skipRest(){await changeRest(()=>null)}
  async function startManualTimer(seconds:number){
   if(!active)return;
-  unlockAudio();const startedAt=Date.now();
-  await mutateActive(active.id,workout=>{workout.rest={kind:"manual",exerciseName:"Timer",nextSet:0,startedAt,endsAt:startedAt+seconds*1000};return workout});
-  setManualTimerOpen(false);setTimerOpen(true);
+  unlockAudio();const rest=createManualRest(seconds,Date.now());
+  await mutateActive(active.id,workout=>{workout.rest=rest;return workout});
+  setDismissedRestKey(null);setManualTimerOpen(false);
  }
 
  async function finishWorkout(){
@@ -199,10 +207,10 @@ export default function App({accountEmail,syncStatus,onSyncNow,onSignOut}:AppPro
    const incomplete=stored.exercises.flatMap(exercise=>exercise.sets).filter(set=>!set.completedAt).length;
    if(incomplete&&!confirm(`${incomplete} niewykonanych serii. Zakończyć trening?`))return;
    await db.transaction("rw",db.workouts,db.active,async()=>{const latest=await db.active.get(active.id);if(!latest)return;const finished:WorkoutHistory={...structuredClone(latest),endedAt:Date.now(),rest:null};delete finished.currentExerciseId;await db.workouts.put(finished);await db.active.delete(active.id)});
-   setActive(null);setTimerOpen(false);setTab("history");await refresh();
+   setActive(null);setDismissedRestKey(null);setTab("history");await refresh();
   }finally{finishingRef.current=false}
  }
- async function discardWorkout(){if(!active||!confirm("Usunąć aktywny trening? Zakończona historia pozostanie bez zmian."))return;await db.active.delete(active.id);setActive(null);setTimerOpen(false);notify("Aktywny trening usunięty")}
+ async function discardWorkout(){if(!active||!confirm("Usunąć aktywny trening? Zakończona historia pozostanie bez zmian."))return;await db.active.delete(active.id);setActive(null);setDismissedRestKey(null);notify("Aktywny trening usunięty")}
 
  async function saveTemplate(template:WorkoutTemplate){await db.templates.put(template);setTemplates(await db.templates.toArray())}
  async function createTemplate(template:WorkoutTemplate){await db.templates.add(template);setTemplates(await db.templates.toArray())}
@@ -238,27 +246,33 @@ export default function App({accountEmail,syncStatus,onSyncNow,onSignOut}:AppPro
   const csv=rows.map(row=>row.map(value=>`"${String(value).replaceAll('"','""')}"`).join(",")).join("\n");const url=URL.createObjectURL(new Blob([csv],{type:"text/csv"}));const anchor=document.createElement("a");anchor.href=url;anchor.download="gym-history.csv";anchor.click();window.setTimeout(()=>URL.revokeObjectURL(url),1000);
  }
 
- const restRemaining=active?.rest?(active.rest.pausedRemaining!==undefined?active.rest.pausedRemaining:Math.max(0,active.rest.endsAt-now)):0;
+ const restRemaining=active?.rest?remainingRestMs(active.rest,now):0;
+ const timerKey=active?.rest?restSessionKey(active.id,active.rest):null;
+ const timerOpen=shouldShowFullscreenTimer(active?.id??null,active?.rest,dismissedRestKey);
+ function openWorkoutTimer(){
+  if(active?.rest){setDismissedRestKey(null);return}
+  setManualTimerOpen(true);
+ }
  const pageTitle=tab==="train"&&active?active.name:labels[tab];
  return <div className="app" data-theme={settings?.theme??"dark"}>
   <header className="topbar">
    <div className="topbar-copy"><span className="eyebrow">GYM PWA</span><h1>{pageTitle}</h1>{active&&tab!=="train"&&<span className="workout-live">Trening trwa · {fmtDuration(Math.floor((now-active.startedAt)/1000))}</span>}</div>
-   {active&&tab==="train"&&<div className="topbar-actions"><button className="timer-shortcut" onClick={()=>active.rest?setTimerOpen(true):setManualTimerOpen(true)}>TIMER</button><button className="finish-button" onClick={()=>void finishWorkout()}>Zakończ</button></div>}
+   {active&&tab==="train"&&<div className="topbar-actions"><button className="timer-shortcut" onClick={openWorkoutTimer}>{active.rest?"PRZERWA":"TIMER"}</button><button className="finish-button" onClick={()=>void finishWorkout()}>Zakończ</button></div>}
    {active&&tab!=="train"&&<button className="return-to-workout" onClick={()=>setTab("train")}>Do treningu</button>}
   </header>
   <main>
    <Suspense fallback={<section className="section"><p className="muted">Otwieranie ekranu…</p></section>}>
-   {tab==="train"&&(active?<ActiveView active={active} now={now} settings={settings} previousSets={name=>previousSets(workouts,name)} setField={updateSetField} usePreviousWeight={usePreviousWeight} completeSet={completeSet} navigateExercise={navigateExercise} discard={discardWorkout} openTimer={()=>active.rest?setTimerOpen(true):setManualTimerOpen(true)}/>:<TrainHome templates={templates} workouts={workouts} active={active} onStart={startWorkout} onContinue={()=>setTab("train")}/>)}
+   {tab==="train"&&(active?<ActiveView active={active} now={now} settings={settings} previousSets={name=>previousSets(workouts,name)} setField={updateSetField} usePreviousWeight={usePreviousWeight} completeSet={completeSet} navigateExercise={navigateExercise} discard={discardWorkout} openTimer={openWorkoutTimer}/>:<TrainHome templates={templates} workouts={workouts} active={active} onStart={startWorkout} onContinue={()=>setTab("train")}/>)}
    {tab==="plan"&&<PlanScreen settings={settings} templates={templates} workouts={workouts} active={active} onSave={saveTemplate} onCreate={createTemplate} onDelete={deleteTemplate} onStart={startWorkout} onContinue={()=>setTab("train")} notify={notify}/>}
    {tab==="history"&&<HistoryScreen workouts={workouts} catalog={exerciseCatalog(templates)} onSave={saveHistory} notify={notify}/>}
    {tab==="progress"&&<ProgressScreen workouts={workouts} body={body}/>}
-   {tab==="more"&&<MoreScreen databaseVersion={db.verno} settings={settings} body={body} accountEmail={accountEmail} syncStatus={syncStatus} onSyncNow={onSyncNow} onSignOut={onSignOut} onSaveSettings={saveSettings} onAddBody={addBody} exportJson={exportJson} importJson={importJson} exportCsv={exportCsv} notify={notify}/>}
+   {tab==="more"&&<MoreScreen settings={settings} body={body} accountEmail={accountEmail} syncStatus={syncStatus} onSyncNow={onSyncNow} onSignOut={onSignOut} onSaveSettings={saveSettings} onAddBody={addBody} exportJson={exportJson} importJson={importJson} exportCsv={exportCsv} notify={notify}/>}
    </Suspense>
   </main>
-  {active?.rest&&<RestBar rest={active.rest} remaining={restRemaining} onOpen={()=>setTimerOpen(true)} onAdjust={adjustRest} onPause={pauseRest} onSkip={skipRest}/>}
-  <nav className="bottom-nav" aria-label="Nawigacja główna">{([["train","Trening","◉"],["plan","Plan","▤"],["history","Historia","↺"],["progress","Progres","⌁"],["more","Więcej","···"]] as [Tab,string,string][]).map(([key,label,icon])=><button key={key} className={tab===key?"active":""} aria-current={tab===key?"page":undefined} onClick={()=>setTab(key)}><span aria-hidden="true">{icon}</span><small>{label}</small></button>)}</nav>
+  {active?.rest&&!timerOpen&&<RestBar rest={active.rest} remaining={restRemaining} onOpen={openWorkoutTimer} onAdjust={adjustRest} onPause={pauseRest} onSkip={skipRest}/>}
+  <nav className="bottom-nav" aria-label="Nawigacja główna">{([["train","Trening","train"],["plan","Plan","plan"],["history","Historia","history"],["progress","Progres","progress"],["more","Więcej","more"]] as [Tab,string,AppIconName][]).map(([key,label,icon])=><button key={key} className={tab===key?"active":""} aria-label={label} aria-current={tab===key?"page":undefined} onClick={()=>setTab(key)}><AppIcon name={icon}/><small>{label}</small></button>)}</nav>
   {manualTimerOpen&&<ManualTimer onClose={()=>setManualTimerOpen(false)} onStart={startManualTimer}/>}
-  {timerOpen&&active?.rest&&<Suspense fallback={null}><TimerScreen rest={active.rest} remaining={restRemaining} active={active} onClose={()=>setTimerOpen(false)} onAdjust={adjustRest} onPause={pauseRest} onSkip={skipRest}/></Suspense>}
+  {timerOpen&&active?.rest&&timerKey&&<Suspense fallback={<div className="timer-loading">Otwieranie timera…</div>}><TimerScreen key={timerKey} rest={active.rest} remaining={restRemaining} now={now} active={active} onClose={()=>setDismissedRestKey(timerKey)} onAdjust={adjustRest} onPause={pauseRest} onSkip={skipRest}/></Suspense>}
   {toast&&<div className="toast" role="status">{toast}</div>}
  </div>;
 }
@@ -267,10 +281,15 @@ function TrainHome({templates,workouts,active,onStart,onContinue}:{templates:Wor
  const last=workouts[0];const todays=new Intl.DateTimeFormat("pl-PL",{weekday:"long",day:"numeric",month:"long"}).format(Date.now());
  const lastSets=last?.exercises.reduce((count,exercise)=>count+exercise.sets.filter(set=>set.completedAt).length,0)||0;
  return <section className="section train-home">
-  <div className="today-label">{capitalize(todays)}</div>
+  <div className="today-label"><b>Dzisiaj</b><span>{capitalize(todays)}</span></div>
   {active&&<button className="continue-workout" onClick={onContinue}><span><b>Kontynuuj {active.name}</b><small>Trening zapisany · {active.exercises.reduce((sum,exercise)=>sum+exercise.sets.filter(set=>set.completedAt).length,0)} serii ukończonych</small></span><span>→</span></button>}
-  <div className="section-heading home-heading"><div><h2>Wybierz trening</h2><p>Twoje zapisane szablony.</p></div><span>{templates.length}</span></div>
-  <div className="workout-pick-list">{templates.map(template=><button key={template.id} className="workout-pick" onClick={()=>onStart(template)} disabled={Boolean(active)}><span><b>{template.name}</b><small>{template.exercises.length} ćwiczeń · około {Math.max(15,Math.round(template.exercises.length*8))} min</small></span><span aria-hidden="true">→</span></button>)}</div>
+  {!active&&templates[0]&&<div className="home-start"><div><span className="eyebrow">GOTOWY NA TRENING?</span><h2>{templates[0].name}</h2><p>{templates[0].exercises.length} ćwiczeń · około {Math.max(15,Math.round(templates[0].exercises.length*8))} min</p></div><button className="primary" onClick={()=>onStart(templates[0])}>Rozpocznij trening</button></div>}
+  <div className="section-heading home-heading"><div><h2>{active?"Twoje plany":"Wybierz trening"}</h2></div><span>{templates.length}</span></div>
+  <div className="workout-pick-list">{templates.map(template=>{
+   const lastForTemplate=workouts.find(workout=>workout.templateId===template.id);
+   return <button key={template.id} className="workout-pick" onClick={()=>onStart(template)} disabled={Boolean(active)}><span><b>{template.name}</b><small>{template.exercises.length} ćwiczeń · ~{Math.max(15,Math.round(template.exercises.length*8))} min{lastForTemplate?` · ostatnio ${relativeDate(lastForTemplate.startedAt)}`:" · jeszcze bez historii"}</small></span><span aria-hidden="true">→</span></button>;
+  })}</div>
+  {!templates.length&&<p className="empty-state">Dodaj swój pierwszy plan w zakładce Plan.</p>}
   {last&&<section className="last-workout"><div className="section-heading"><div><h2>Ostatni trening</h2></div></div><div className="last-workout-row"><b>{last.name}</b><span>{fmtDate(last.startedAt)}</span></div><div className="last-workout-stats"><span>{fmtDuration(Math.floor((last.endedAt-last.startedAt)/1000))}</span><span>{lastSets} serii</span><span>{Math.round(volume(last)).toLocaleString("pl-PL")} kg</span></div></section>}
   {!last&&<p className="empty-state">Po pierwszym treningu zobaczysz tu swoje ostatnie wyniki.</p>}
  </section>;
@@ -278,8 +297,7 @@ function TrainHome({templates,workouts,active,onStart,onContinue}:{templates:Wor
 function ActiveView({active,now,settings,previousSets,setField,usePreviousWeight,completeSet,navigateExercise,discard,openTimer}:{active:ActiveWorkout;now:number;settings:Settings|null;previousSets:(name:string)=>SetLog[];setField:(exerciseId:string,setId:string,field:Field,value:string)=>void;usePreviousWeight:(exerciseId:string,setId:string,weight:SetLog["weight"])=>void;completeSet:(exerciseId:string,setId:string)=>void;navigateExercise:(direction:-1|1)=>void;discard:()=>void;openTimer:()=>void}){
  const index=currentExerciseIndex(active),count=active.exercises.length,exercise=active.exercises[index];
  if(!exercise)return <section className="section"><Empty text="Ten trening nie ma już ćwiczeń."/><button className="quiet-button danger-text" onClick={discard}>Odrzuć trening</button></section>;
- const setIndex=firstIncompleteSetIndex(exercise),set=setIndex>=0?exercise.sets[setIndex]:null;
- const latestCompleted=[...exercise.sets].reverse().find(item=>item.completedAt);
+ const setIndex=firstIncompleteSetIndex(exercise);
  const previous=previousSets(exercise.name);
  const completeSets=active.exercises.reduce((sum,item)=>sum+item.sets.filter(entry=>entry.completedAt).length,0);
  const allSets=active.exercises.reduce((sum,item)=>sum+item.sets.length,0);
@@ -290,13 +308,21 @@ function ActiveView({active,now,settings,previousSets,setField,usePreviousWeight
   <article className="current-exercise" key={exercise.templateExerciseId}>
    <div className="current-exercise-heading"><h2>{exercise.name}</h2><p>{exercise.target.sets} × {exercise.target.timed?"czas":`${exercise.target.repMin}–${exercise.target.repMax}`} <span>·</span> RIR {exercise.target.rir} <span>·</span> tempo {exercise.target.tempo}</p><small>PRZERWA {fmtDuration(exercise.target.restSec)}</small></div>
    {settings?.showExerciseImages===true&&<ExerciseImage exerciseId={exercise.templateExerciseId}/>}
-   <div className="set-progress" aria-label="Postęp serii">{exercise.sets.map((item,setNo)=><span key={item.id} className={item.completedAt?"done":setNo===setIndex?"current":""}>{item.completedAt?"✓":item.setNo}</span>)}</div>
-   {set?<>
-    <div className="set-context"><b>SERIA {set.setNo}</b>{previous.length>0?<div className="previous-results"><small>OSTATNIO</small><div>{previous.map(item=><button key={item.id} className="previous-result" onClick={()=>usePreviousWeight(exercise.templateExerciseId,set.id,item.weight)}><b>{item.weight??"—"} × {item.reps??"—"}</b></button>)}</div></div>:latestCompleted?<span className="last-set-note">Poprzednia seria: {latestCompleted.weight??"—"} × {latestCompleted.reps??"—"}</span>:<span className="last-set-note">Brak poprzedniego wyniku</span>}</div>
-    <div className="set-input-labels"><span>KG</span><span>{exercise.target.timed?"SEK.":"POWT."}</span><span>RIR</span></div>
-    <div className="set-inputs"><input aria-label={`Ciężar seria ${set.setNo}`} inputMode="decimal" placeholder="0" value={set.weight??""} onChange={event=>setField(exercise.templateExerciseId,set.id,"weight",event.target.value)}/><input aria-label={`${exercise.target.timed?"Czas":"Powtórzenia"} seria ${set.setNo}`} inputMode="numeric" placeholder={exercise.target.timed?"sek.":String(exercise.target.repMin)} value={set.reps??""} onChange={event=>setField(exercise.templateExerciseId,set.id,"reps",event.target.value)}/><input aria-label={`RIR seria ${set.setNo}`} inputMode="numeric" placeholder={exercise.target.rir} value={set.rir??""} onChange={event=>setField(exercise.templateExerciseId,set.id,"rir",event.target.value)}/></div>
-    <button className="complete-set-button" onClick={()=>completeSet(exercise.templateExerciseId,set.id)}>✓ Zakończ serię</button>
-   </>:<div className="exercise-complete"><b>Wszystkie serie wykonane</b><span>Możesz przejść dalej albo wrócić do zapisanych serii.</span></div>}
+   <div className="set-table" role="table" aria-label={`Serie ćwiczenia ${exercise.name}`}>
+    <div className="set-table-heading" role="row"><span role="columnheader">SERIA</span><span role="columnheader">PREV</span><span role="columnheader">KG</span><span role="columnheader">{exercise.target.timed?"SEK.":"POWT."}</span><span role="columnheader">RIR</span><span role="columnheader" aria-label="Zakończona"/></div>
+    {exercise.sets.map((item,rowIndex)=>{
+     const done=Boolean(item.completedAt),isCurrent=rowIndex===setIndex,previousSet=previous.find(previousItem=>previousItem.setNo===item.setNo);
+     return <div className={`set-table-row ${done?"completed":""} ${isCurrent?"current":""}`} role="row" key={item.id}>
+      <span className="set-number" role="cell">{done?<span aria-label="Zakończona">✓</span>:item.setNo}</span>
+      <span role="cell">{previousSet?<button className="previous-result" aria-label={`Użyj poprzedniego ciężaru ${previousSet.weight??"brak"} kg`} disabled={done||previousSet.weight==null} onClick={()=>usePreviousWeight(exercise.templateExerciseId,item.id,previousSet.weight)}>{previousSet.weight??"—"} × {previousSet.reps??"—"}</button>:<span className="previous-empty">—</span>}</span>
+      <input role="cell" aria-label={`Ciężar seria ${item.setNo}`} inputMode="decimal" placeholder="kg" value={item.weight??""} disabled={done} onChange={event=>setField(exercise.templateExerciseId,item.id,"weight",event.target.value)}/>
+      <input role="cell" aria-label={`${exercise.target.timed?"Czas":"Powtórzenia"} seria ${item.setNo}`} inputMode="numeric" placeholder={exercise.target.timed?"sek.":String(exercise.target.repMin)} value={item.reps??""} disabled={done} onChange={event=>setField(exercise.templateExerciseId,item.id,"reps",event.target.value)}/>
+      <input role="cell" aria-label={`RIR seria ${item.setNo}`} inputMode="numeric" placeholder={exercise.target.rir} value={item.rir??""} disabled={done} onChange={event=>setField(exercise.templateExerciseId,item.id,"rir",event.target.value)}/>
+      <button role="cell" className="set-complete" aria-label={`Zakończ serię ${item.setNo}`} aria-pressed={done} disabled={done||!isCurrent} onClick={()=>completeSet(exercise.templateExerciseId,item.id)}>✓</button>
+     </div>;
+    })}
+   </div>
+   {setIndex<0&&<div className="exercise-complete"><b>Wszystkie serie wykonane</b><span>Możesz przejść dalej albo wrócić do zapisanych serii.</span></div>}
   </article>
   <div className="exercise-navigation"><button onClick={()=>navigateExercise(-1)} disabled={index===0}>← Poprzednie</button><button onClick={()=>navigateExercise(1)} disabled={index===count-1}>Następne ćwiczenie →</button></div>
   <button className="manual-timer-link" onClick={openTimer}>Timer ręczny</button>
@@ -307,7 +333,7 @@ function RestBar({rest,remaining,onOpen,onAdjust,onPause,onSkip}:{rest:RestState
  const paused=rest.pausedRemaining!==undefined,ended=remaining<=0&&!paused;
  return <div className={`rest-bar ${ended?"ended":""}`}>
   <button className="rest-bar-open" onClick={onOpen}><small>{rest.kind==="manual"?"TIMER":ended?"PRZERWA ZAKOŃCZONA":"PRZERWA"}</small><b>{clock(remaining)}</b><span>{rest.kind==="manual"?"Timer ręczny":rest.exerciseName}</span></button>
-  <div className="rest-bar-actions"><button aria-label="Odejmij 30 sekund" onClick={()=>onAdjust(-30)}>−30</button><button aria-label={paused?"Wznów":"Pauza"} onClick={onPause}>{paused?"Wznów":"Pauza"}</button><button aria-label="Dodaj 30 sekund" onClick={()=>onAdjust(30)}>+30</button><button aria-label="Pomiń przerwę" onClick={onSkip}>Pomiń</button></div>
+  <div className="rest-bar-actions"><button aria-label="Odejmij 30 sekund" disabled={ended} onClick={()=>onAdjust(-30)}>−30</button><button aria-label={paused?"Wznów":"Pauza"} disabled={ended} onClick={onPause}>{paused?"Wznów":"Pauza"}</button><button aria-label="Dodaj 30 sekund" disabled={ended} onClick={()=>onAdjust(30)}>+30</button><button aria-label={ended?"Wróć do treningu":"Pomiń przerwę"} onClick={onSkip}>{ended?"Wróć":"Pomiń"}</button></div>
  </div>;
 }
 
@@ -341,4 +367,12 @@ function exerciseCatalog(templates:WorkoutTemplate[]){
  for(const exercise of entries)if(!seen.has(exercise.id))seen.set(exercise.id,exercise);return [...seen.values()];
 }
 function capitalize(value:string){return value.charAt(0).toLocaleUpperCase("pl-PL")+value.slice(1)}
+function relativeDate(timestamp:number){
+ const today=new Date();today.setHours(0,0,0,0);const day=new Date(timestamp);day.setHours(0,0,0,0);
+ const days=Math.max(0,Math.floor((today.getTime()-day.getTime())/86_400_000));
+ if(days===0)return "dzisiaj";
+ if(days===1)return "wczoraj";
+ if(days<7)return `${days} dni temu`;
+ return fmtDate(timestamp);
+}
 function clock(milliseconds:number){const seconds=Math.max(0,Math.ceil(milliseconds/1000));return `${String(Math.floor(seconds/60)).padStart(2,"0")}:${String(seconds%60).padStart(2,"0")}`}
