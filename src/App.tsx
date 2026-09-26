@@ -21,7 +21,9 @@ const fmtDate=(time:number)=>new Intl.DateTimeFormat("pl-PL",{day:"numeric",mont
 const parseNum=(value:string)=>{const normalized=value.trim().replace(",",".");if(!normalized)return null;const n=Number(normalized);return Number.isFinite(n)&&n>=0?n:null};
 const labels:Record<Tab,string>={train:"Trening",plan:"Plan",history:"Historia",progress:"Progres",more:"Więcej"};
 
-export default function App(){
+type AppProps={accountEmail:string;syncStatus:"syncing"|"synced"|"offline"|"error";onSyncNow:()=>Promise<void>;onSignOut:()=>Promise<void>};
+
+export default function App({accountEmail,syncStatus,onSyncNow,onSignOut}:AppProps){
  const [tab,setTab]=useState<Tab>("train");
  const [templates,setTemplates]=useState<WorkoutTemplate[]>([]);
  const [workouts,setWorkouts]=useState<WorkoutHistory[]>([]);
@@ -250,7 +252,7 @@ export default function App(){
    {tab==="plan"&&<PlanScreen settings={settings} templates={templates} workouts={workouts} active={active} onSave={saveTemplate} onCreate={createTemplate} onDelete={deleteTemplate} onStart={startWorkout} onContinue={()=>setTab("train")} notify={notify}/>}
    {tab==="history"&&<HistoryScreen workouts={workouts} catalog={exerciseCatalog(templates)} onSave={saveHistory} notify={notify}/>}
    {tab==="progress"&&<ProgressScreen workouts={workouts} body={body}/>}
-   {tab==="more"&&<MoreScreen databaseVersion={db.verno} settings={settings} body={body} onSaveSettings={saveSettings} onAddBody={addBody} exportJson={exportJson} importJson={importJson} exportCsv={exportCsv} notify={notify}/>}
+   {tab==="more"&&<MoreScreen databaseVersion={db.verno} settings={settings} body={body} accountEmail={accountEmail} syncStatus={syncStatus} onSyncNow={onSyncNow} onSignOut={onSignOut} onSaveSettings={saveSettings} onAddBody={addBody} exportJson={exportJson} importJson={importJson} exportCsv={exportCsv} notify={notify}/>}
    </Suspense>
   </main>
   {active?.rest&&<RestBar rest={active.rest} remaining={restRemaining} onOpen={()=>setTimerOpen(true)} onAdjust={adjustRest} onPause={pauseRest} onSkip={skipRest}/>}
