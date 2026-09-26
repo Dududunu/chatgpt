@@ -29,6 +29,22 @@ describe("record-level sync merge",()=>{
   const merged=mergeRecords([row("old-workout",100,"stale")],[row("old-workout",200,"newer")]);
   expect(merged.records[0].data).toBe("newer");expect(merged.upload).toHaveLength(0);
  });
+ it("syncs rating, trimmed review text, and private photoPath on the workout record",()=>{
+  type WorkoutReview={rating:number|null;reviewText:string|null;photoPath:string|null};
+  const cloud:VersionedRecord<WorkoutReview>={id:"workout",updatedAt:10,data:{rating:3,reviewText:"Stara notatka",photoPath:null}};
+  const local:VersionedRecord<WorkoutReview>={id:"workout",updatedAt:11,data:{rating:4,reviewText:"Mocna sesja.",photoPath:"user/workout/photo-1.webp"}};
+  const merged=mergeRecords([local],[cloud]);
+  expect(merged.records[0].data).toEqual(local.data);
+  expect(merged.upload).toEqual([local]);
+ });
+ it("does not replace a newer cloud review or photo path with a stale device",()=>{
+  type WorkoutReview={rating:number|null;reviewText:string|null;photoPath:string|null};
+  const local:VersionedRecord<WorkoutReview>={id:"workout",updatedAt:10,data:{rating:3,reviewText:"Stara notatka",photoPath:null}};
+  const cloud:VersionedRecord<WorkoutReview>={id:"workout",updatedAt:12,data:{rating:5,reviewText:"Nowsza notatka.",photoPath:"user/workout/photo-new.webp"}};
+  const merged=mergeRecords([local],[cloud]);
+  expect(merged.records[0].data).toEqual(cloud.data);
+  expect(merged.pull).toEqual([cloud]);
+ });
  it("can keep multiple non-conflicting records from both devices",()=>{
   const merged=mergeRecords([row("local",1,"L")],[row("cloud",2,"C")]);
   expect(merged.records.map(item=>item.id).sort()).toEqual(["cloud","local"]);

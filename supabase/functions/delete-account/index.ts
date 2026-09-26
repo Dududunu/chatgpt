@@ -1,5 +1,6 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
+import { removeUserWorkoutMedia } from "./workoutMediaCleanup.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -40,6 +41,14 @@ Deno.serve(async (request: Request) => {
   const { data: authData, error: authError } = await admin.auth.getUser(token);
   const user = authData.user;
   if (authError || !user) return response({ error: "Unauthorized" }, 401);
+
+  // Remove private objects before deleting the account. If Storage is unavailable,
+  // keep the account intact so the user can retry without leaving orphaned photos.
+  try {
+    await removeUserWorkoutMedia(admin, user.id);
+  } catch {
+    return response({ error: "Could not delete workout photos" }, 500);
+  }
 
   // Delete every record for this authenticated account first. These operations are
   // idempotent, so a retry can safely finish cleanup if a request is interrupted.

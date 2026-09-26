@@ -1,5 +1,5 @@
 import Dexie, { type Table } from "dexie";
-import type { ActiveWorkout, BodyEntry, Settings, SyncMeta, WorkoutHistory, WorkoutTemplate } from "./types";
+import type { ActiveWorkout, BodyEntry, Settings, SyncMeta, WorkoutHistory, WorkoutPhotoQueueEntry, WorkoutTemplate } from "./types";
 import { defaultTemplates } from "./seed";
 import { normalizeSettings } from "./settings";
 import { restoreActiveWorkout } from "./workoutLogic";
@@ -20,6 +20,7 @@ class GymDB extends Dexie {
  body!:Table<BodyEntry,string>;
  settings!:Table<Settings,string>;
  syncMeta!:Table<SyncMeta,string>;
+ workoutMedia!:Table<WorkoutPhotoQueueEntry,string>;
  constructor(){
   super("gym-pwa");
   this.version(1).stores({
@@ -56,6 +57,15 @@ class GymDB extends Dexie {
     });
    }
    if(!(await transaction.table("syncMeta").get("main")))await transaction.table("syncMeta").put({id:"main"});
+  });
+  this.version(4).stores({
+   templates:"id,name",
+   active:"id,templateId,startedAt",
+   workouts:"id,templateId,startedAt,endedAt",
+   body:"id,date",
+   settings:"id",
+   syncMeta:"id,userId",
+   workoutMedia:"id,userId,workoutId,status"
   });
   this.installUpdatedAtHook(this.templates);
   this.installUpdatedAtHook(this.active);

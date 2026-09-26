@@ -55,8 +55,8 @@ function objectOf(value:unknown):Record<string,unknown>{return value&&typeof val
 }
 
 async function clearLocalState(){
- await db.transaction("rw",[db.templates,db.workouts,db.body,db.settings,db.active,db.syncMeta],async()=>{
-  await Promise.all([db.templates.clear(),db.workouts.clear(),db.body.clear(),db.settings.clear(),db.active.clear(),db.syncMeta.clear()]);
+ await db.transaction("rw",[db.templates,db.workouts,db.body,db.settings,db.active,db.syncMeta,db.workoutMedia],async()=>{
+  await Promise.all([db.templates.clear(),db.workouts.clear(),db.body.clear(),db.settings.clear(),db.active.clear(),db.syncMeta.clear(),db.workoutMedia.clear()]);
  });
 }
 
@@ -261,7 +261,18 @@ async function syncCloudUser(userId:string,fallbackDisplayName="",generation=clo
  let remote=await fetchCloudState(userId);
  assertCurrentCloudUser(userId,generation);
  let meta=await mergeRound(userId,remote,fallbackDisplayName,generation,true);
- // A second read catches a newer write that landed on another device while the first batch was uploading.
+ const mediaRows=await db.workoutMedia.where("userId").equals(userId).toArray();
+ const pendingMedia=mediaRows.some(row=>row.deletePaths.length>0||Boolean(row.queuedPath)||(Boolean(row.blob)&&row.status!=="uploaded"));
+ if(pendingMedia){
+  const {processWorkoutMedia}=await import("./workoutMedia");
+  await processWorkoutMedia(userId,"upload");
+  assertCurrentCloudUser(userId,generation);
+  remote=await fetchCloudState(userId);
+  meta=await mergeRound(userId,remote,fallbackDisplayName,generation,true);
+  await processWorkoutMedia(userId,"delete");
+  assertCurrentCloudUser(userId,generation);
+ }
+ // A second read catches a newer write that landed on another device while this batch was uploading.
  remote=await fetchCloudState(userId);
  assertCurrentCloudUser(userId,generation);
  meta=await mergeRound(userId,remote,fallbackDisplayName,generation,true);
@@ -289,9 +300,9 @@ export async function prepareCloudUser(userId:string,fallbackDisplayName=""){
   const cloudProfile=remote.profile?{displayName:String(remote.profile.display_name??""),updatedAt:toMillis(remote.profile.updated_at)}:null;
   const profile=cloudProfile??await ensureProfile(userId,fallbackDisplayName);
   const activeDeletedAt=activeRecord?.deletedAt??(remote.state?.active_deleted_at?toMillis(remote.state.active_deleted_at):undefined);
-  await withPreservedSyncTimestamps(()=>db.transaction("rw",[db.templates,db.workouts,db.body,db.settings,db.active,db.syncMeta],async()=>{
+  await withPreservedSyncTimestamps(()=>db.transaction("rw",[db.templates,db.workouts,db.body,db.settings,db.active,db.syncMeta,db.workoutMedia],async()=>{
    assertCurrentCloudUser(userId,generation);
-   await Promise.all([db.templates.clear(),db.workouts.clear(),db.body.clear(),db.settings.clear(),db.active.clear()]);
+   await Promise.all([db.templates.clear(),db.workouts.clear(),db.body.clear(),db.settings.clear(),db.active.clear(),db.workoutMedia.clear()]);
    const templates=templateRecords.map(setVersion).filter((row):row is WorkoutTemplate=>Boolean(row));
    const workouts=workoutRecords.map(setVersion).filter((row):row is WorkoutHistory=>Boolean(row));
    const body=bodyRecords.map(setVersion).filter((row):row is BodyEntry=>Boolean(row));

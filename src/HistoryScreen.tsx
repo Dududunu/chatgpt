@@ -3,15 +3,18 @@ import { volume } from "./stats";
 import { normalizeSetForCompletion } from "./workoutLogic";
 import type { BodyEntry, ExerciseTemplate, SetLog, WorkoutHistory } from "./types";
 import { calendarMonthCells,groupWorkoutsByDay,localDateKey,measurementsForCalendarDay,moveCalendarMonth,workoutsForCalendarDay } from "./historyCalendar";
+import { WorkoutReviewEditor } from "./WorkoutReviewEditor";
 
-type Props={workouts:WorkoutHistory[];body:BodyEntry[];catalog:ExerciseTemplate[];onSave:(workout:WorkoutHistory)=>Promise<void>;notify:(message:string)=>void};
+type ReviewPatch=Partial<Pick<WorkoutHistory,"rating"|"reviewText"|"photoPath">>;
+type Props={workouts:WorkoutHistory[];body:BodyEntry[];catalog:ExerciseTemplate[];userId:string;syncStatus:string;onSave:(workout:WorkoutHistory)=>Promise<void>;onSaveReview:(workoutId:string,patch:ReviewPatch)=>Promise<void>;onDelete:(workout:WorkoutHistory)=>Promise<void>;onRetry:()=>Promise<void>;notify:(message:string)=>void};
 const duration=(seconds:number)=>{const h=Math.floor(seconds/3600),m=Math.floor(seconds%3600/60),s=seconds%60;return h?`${h}:${String(m).padStart(2,"0")}:${String(s).padStart(2,"0")}`:`${m}:${String(s).padStart(2,"0")}`};
 const date=(timestamp:number)=>new Intl.DateTimeFormat("pl-PL",{day:"numeric",month:"short",year:"numeric"}).format(timestamp);
 const dateTimeValue=(timestamp:number)=>{const d=new Date(timestamp);return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}T${String(d.getHours()).padStart(2,"0")}:${String(d.getMinutes()).padStart(2,"0")}`};
 
-export function HistoryScreen({workouts,body,catalog,onSave,notify}:Props){
+export function HistoryScreen({workouts,body,catalog,userId,syncStatus,onSave,onSaveReview,onDelete,onRetry,notify}:Props){
  const [selectedId,setSelectedId]=useState<string|null>(null);
  const [editing,setEditing]=useState(false);
+ const [editingReview,setEditingReview]=useState(false);
  const [view,setView]=useState<"list"|"calendar">("list");
  const [month,setMonth]=useState(()=>{const now=new Date();return new Date(now.getFullYear(),now.getMonth(),1)});
  const [selectedDay,setSelectedDay]=useState(()=>localDateKey(Date.now()));
@@ -20,11 +23,17 @@ export function HistoryScreen({workouts,body,catalog,onSave,notify}:Props){
   const completed=selected.exercises.reduce((count,exercise)=>count+exercise.sets.filter(set=>set.completedAt).length,0);
   const seconds=Math.max(0,Math.floor((selected.endedAt-selected.startedAt)/1000));
   return <section className="section history-screen">
-   <button className="back-link" onClick={()=>{setSelectedId(null);setEditing(false)}}>← Historia</button>
+   <button className="back-link" onClick={()=>{setSelectedId(null);setEditing(false);setEditingReview(false)}}>← Historia</button>
    <header className="history-detail-heading"><span className="eyebrow">{date(selected.startedAt)}</span><h2>{selected.name}</h2><p>{duration(seconds)} · {completed} serii · {Math.round(volume(selected)).toLocaleString("pl-PL")} kg</p></header>
    {editing?<HistoryEditor workout={selected} catalog={catalog} onCancel={()=>setEditing(false)} onSave={async value=>{await onSave(value);setEditing(false);notify("Historia treningu zaktualizowana")}} notify={notify}/>:<>
+    <WorkoutReviewEditor workout={selected} userId={userId} readOnly={!editingReview} syncStatus={syncStatus} onSaveReview={patch=>onSaveReview(selected.id,patch)} onRetry={onRetry} notify={notify}/>
+    {editingReview&&<button type="button" className="quiet-button history-edit" onClick={()=>setEditingReview(false)}>Zakończ edycję podsumowania</button>}
+    {!editingReview&&<>
     <div className="history-exercises history-detail-exercises">{selected.exercises.map(exercise=><article className="history-exercise" key={`${exercise.templateExerciseId}-${exercise.name}`}><h3>{exercise.name}</h3><div>{exercise.sets.filter(set=>set.completedAt).map(set=><span key={set.id}>Seria {set.setNo} · {set.weight} kg × {set.reps}{set.rir!==null?` · RIR ${set.rir}`:""}</span>)}</div></article>)}</div>
+    <button className="quiet-button history-edit" onClick={()=>setEditingReview(true)}>Edytuj podsumowanie</button>
     <button className="quiet-button history-edit" onClick={()=>setEditing(true)}>Edytuj trening</button>
+    <button type="button" className="quiet-button history-delete" onClick={()=>{if(confirm("Usunąć ten trening i jego zdjęcie?"))void onDelete(selected).then(()=>notify("Trening usunięty"))}}>Usuń trening</button>
+    </>}
    </>}
   </section>;
  }
@@ -46,13 +55,13 @@ export function HistoryScreen({workouts,body,catalog,onSave,notify}:Props){
     {selectedWorkouts.length?selectedWorkouts.map(workout=>{
      const completed=workout.exercises.reduce((count,exercise)=>count+exercise.sets.filter(set=>set.completedAt).length,0);
      const seconds=Math.max(0,Math.floor((workout.endedAt-workout.startedAt)/1000));
-     return <button className="history-item" key={workout.id} onClick={()=>setSelectedId(workout.id)}><span className="history-item-main"><b>{workout.name}</b><small>{completed} serii · {Math.round(volume(workout)).toLocaleString("pl-PL")} kg</small></span><span className="history-summary-meta"><b>{duration(seconds)}</b></span><span className="history-chevron" aria-hidden="true">›</span></button>;
+     return <button className="history-item" key={workout.id} onClick={()=>setSelectedId(workout.id)}><span className="history-item-main"><b>{workout.name}</b><small>{completed} serii · {Math.round(volume(workout)).toLocaleString("pl-PL")} kg</small></span><span className="history-summary-meta"><b>{duration(seconds)}</b>{workout.rating!=null&&workout.rating>=1&&workout.rating<=5&&<small className="history-rating" aria-label={`${workout.rating} z 5 gwiazdek`}>{"★".repeat(workout.rating)}{"☆".repeat(5-workout.rating)}</small>}</span><span className="history-chevron" aria-hidden="true">›</span></button>;
     }):selectedMeasurements.length===0&&<p className="calendar-no-workout">Brak treningu tego dnia.</p>}
    </section>
   </div>:<div className="history-list">{workouts.map(workout=>{
    const completed=workout.exercises.reduce((count,exercise)=>count+exercise.sets.filter(set=>set.completedAt).length,0);
    const seconds=Math.max(0,Math.floor((workout.endedAt-workout.startedAt)/1000));
-   return <button className="history-item" key={workout.id} onClick={()=>setSelectedId(workout.id)}><span className="history-item-main"><b>{workout.name}</b><small>{date(workout.startedAt)}</small></span><span className="history-summary-meta"><b>{duration(seconds)}</b><small>{completed} serii · {Math.round(volume(workout)).toLocaleString("pl-PL")} kg</small></span><span className="history-chevron" aria-hidden="true">›</span></button>;
+   return <button className="history-item" key={workout.id} onClick={()=>setSelectedId(workout.id)}><span className="history-item-main"><b>{workout.name}</b><small>{date(workout.startedAt)}</small></span><span className="history-summary-meta"><b>{duration(seconds)}</b><small>{completed} serii · {Math.round(volume(workout)).toLocaleString("pl-PL")} kg</small>{workout.rating!=null&&workout.rating>=1&&workout.rating<=5&&<small className="history-rating" aria-label={`${workout.rating} z 5 gwiazdek`}>{"★".repeat(workout.rating)}{"☆".repeat(5-workout.rating)}</small>}</span><span className="history-chevron" aria-hidden="true">›</span></button>;
   })}</div>}
  </section>;
 }

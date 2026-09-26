@@ -69,7 +69,31 @@ export type ActiveWorkout=SyncFields&{
  planSetChanges?:string[];
 };
 
-export type WorkoutHistory=ActiveWorkout&{endedAt:number};
+export type WorkoutHistory=ActiveWorkout&{
+ endedAt:number;
+ rating?:number|null;
+ reviewText?:string|null;
+ /** Private workout-media object key, never a public URL. */
+ photoPath?:string|null;
+};
+
+export type WorkoutPhotoSyncStatus="pending"|"uploading"|"uploaded"|"error";
+export type WorkoutPhotoErrorPhase="upload"|"delete";
+/** A compressed local copy also acts as the durable offline upload queue. */
+export type WorkoutPhotoQueueEntry={
+ id:string;
+ userId:string;
+ workoutId:string;
+ blob:Blob|null;
+ /** Stable target path makes an upload retry idempotent. */
+ queuedPath?:string|null;
+ photoPath:string|null;
+ deletePaths:string[];
+ status:WorkoutPhotoSyncStatus;
+ errorPhase?:WorkoutPhotoErrorPhase;
+ lastError?:string;
+ updatedAt:number;
+};
 
 export type BodyEntry=SyncFields&{
  id:string;

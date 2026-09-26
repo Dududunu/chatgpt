@@ -37,7 +37,12 @@ export default function AuthShell(){
    if(cancelled)return;
    setDisplayName(result.displayName??"");setReady(true);setSyncStatus(navigator.onLine?"synced":"offline");
    syncRef.current=startAutoSync(user.id,result.hash,setSyncStatus,fallback,setDisplayName);
-  }).catch(()=>{if(!cancelled){setSyncStatus("error");setReady(true)}});
+  }).catch(()=>{
+   if(cancelled)return;
+   setSyncStatus(navigator.onLine?"error":"offline");
+   setReady(true);
+   syncRef.current=startAutoSync(user.id,"",setSyncStatus,fallback,setDisplayName);
+  });
   return()=>{cancelled=true;syncRef.current?.stop();syncRef.current=null};
  },[session?.user.id]);
 
@@ -83,7 +88,7 @@ export default function AuthShell(){
  if(!session)return <AuthScreen/>;
  if(!ready)return <div className="auth-shell"><div className="auth-card"><span className="eyebrow">GYM PWA</span><h1>Wczytywanie profilu</h1><p>Łączę Twoje dane treningowe z chmurą.</p></div></div>;
 
- return <App accountEmail={session.user.email??"Konto"} displayName={displayName} syncStatus={syncStatus} onSyncNow={syncNow} onSignOut={signOut} onUpdateDisplayName={saveDisplayName} onChangePassword={changeAccountPassword} onDeleteAccount={deleteAccount}/>;
+ return <App userId={session.user.id} accountEmail={session.user.email??"Konto"} displayName={displayName} syncStatus={syncStatus} onSyncNow={syncNow} onSignOut={signOut} onUpdateDisplayName={saveDisplayName} onChangePassword={changeAccountPassword} onDeleteAccount={deleteAccount}/>;
 }
 
 type AuthMode="login"|"signup"|"reset"|"recovery";
