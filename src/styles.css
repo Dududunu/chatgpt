@@ -24,3 +24,23 @@
 .exerciseImageFallback{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:9px;width:100%;height:clamp(220px,64vw,285px);margin:8px 0 10px;border-radius:7px;background:var(--panel);color:var(--muted);font-size:11px;font-weight:650;letter-spacing:.06em;text-transform:uppercase}
 .exerciseImageFallback svg{width:44px;height:32px;fill:none;stroke:currentColor;stroke-width:2.2;stroke-linecap:round}
 @media(max-width:600px){.exerciseImage,.exerciseImageFallback{height:245px}}
+
+
+/* Account / authentication */
+.auth-shell{min-height:100dvh;display:grid;place-items:center;padding:24px;background:var(--bg,#0b0c0b);color:var(--text,#f4f4f1)}
+.auth-card{width:min(100%,420px);display:grid;gap:16px;padding:24px;border:1px solid var(--border,#2a2d2b);border-radius:18px;background:var(--surface,#111310)}
+.auth-card h1{margin:0;font-size:30px;line-height:1.05}
+.auth-card p{margin:0;color:var(--muted,#9aa09a)}
+.auth-card .field-label{display:grid;gap:7px}
+.auth-card input{width:100%;min-height:48px;padding:0 14px;border:1px solid var(--border,#2a2d2b);border-radius:12px;background:var(--input,#0c0e0c);color:inherit;font:inherit}
+.auth-switch{min-height:44px;border:0;background:transparent;color:inherit;text-decoration:underline;text-underline-offset:3px}
+.auth-message{font-size:14px;line-height:1.4}
+.account-row{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:10px 0 14px}
+.account-row span:first-child{display:grid;gap:4px;min-width:0}
+.account-row b{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.account-row small{color:var(--muted,#9aa09a)}
+.sync-dot{width:10px;height:10px;border-radius:50%;background:#7c827d;flex:0 0 auto}
+.sync-dot.synced{background:#38a169}
+.sync-dot.syncing{background:#d69e2e}
+.sync-dot.offline{background:#718096}
+.sync-dot.error{background:#e53e3e}
