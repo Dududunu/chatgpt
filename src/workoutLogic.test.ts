@@ -1,5 +1,5 @@
 import { describe,expect,it } from "vitest";
-import { adjustRestTimer, isRestNotificationDue, normalizeSetForCompletion, shouldStartRest, toFiniteNumber, toggleRestPause } from "./workoutLogic";
+import { adjustRestTimer, currentExerciseIndex, firstIncompleteSetIndex, isRestNotificationDue, navigateWorkoutExercise, nextExerciseAfterCompletedSet, normalizeSetForCompletion, restoreActiveWorkout, shouldStartRest, toFiniteNumber, toggleRestPause } from "./workoutLogic";
 import type { ActiveWorkout, ExerciseTemplate, RestState } from "./types";
 
 const normal:ExerciseTemplate={id:"x",name:"X",sets:2,repMin:6,repMax:8,rir:"2",tempo:"2110",restSec:120};
@@ -34,6 +34,7 @@ describe("rest scheduling",()=>{
    ]}
   ]};
   expect(shouldStartRest(workout,0,0)).toBe(true);
+  expect(nextExerciseAfterCompletedSet(workout,0,0)).toBe(workout.exercises[0].templateExerciseId);
   workout.exercises[0].sets[1].completedAt=20;
   expect(shouldStartRest(workout,0,1)).toBe(false);
  });
@@ -58,6 +59,63 @@ describe("superset rest",()=>{
   workout.exercises[0].sets[1].completedAt=30;
   workout.exercises[1].sets[1].completedAt=40;
   expect(shouldStartRest(workout,1,1)).toBe(false);
+ });
+
+ it("alternates A1 → B1 → rest → A2 and advances after the final pair",()=>{
+  const target={...normal,superset:"arms"};
+  const set=(id:string,no:number,completedAt:number|null=null)=>({id,setNo:no,weight:10,reps:8,rir:1,completedAt});
+  const workout:ActiveWorkout={id:"w",templateId:"t",name:"T",startedAt:1,exercises:[
+   {templateExerciseId:"A",name:"A",target,sets:[set("a1",1),set("a2",2)]},
+   {templateExerciseId:"B",name:"B",target,sets:[set("b1",1),set("b2",2)]},
+   {templateExerciseId:"C",name:"C",target:normal,sets:[set("c1",1)]}
+  ]};
+
+  workout.exercises[0].sets[0].completedAt=10;
+  expect(nextExerciseAfterCompletedSet(workout,0,0)).toBe("B");
+  expect(shouldStartRest(workout,0,0)).toBe(false);
+  workout.exercises[1].sets[0].completedAt=20;
+  expect(nextExerciseAfterCompletedSet(workout,1,0)).toBe("A");
+  expect(shouldStartRest(workout,1,0)).toBe(true);
+  workout.exercises[0].sets[1].completedAt=30;
+  expect(nextExerciseAfterCompletedSet(workout,0,1)).toBe("B");
+  workout.exercises[1].sets[1].completedAt=40;
+  expect(nextExerciseAfterCompletedSet(workout,1,1)).toBe("C");
+  expect(shouldStartRest(workout,1,1)).toBe(false);
+ });
+});
+
+describe("active exercise navigation and recovery",()=>{
+ const workout:ActiveWorkout={id:"w",templateId:"t",name:"T",startedAt:1,currentExerciseId:"B",rest:{...rest,pausedRemaining:15_000},exercises:[
+  {templateExerciseId:"A",name:"A",target:normal,sets:[{id:"a",setNo:1,weight:null,reps:null,rir:null,completedAt:null}]},
+  {templateExerciseId:"B",name:"B",target:normal,sets:[
+   {id:"b1",setNo:1,weight:30,reps:8,rir:2,completedAt:5},
+   {id:"b2",setNo:2,weight:"27,5",reps:"8",rir:"1",completedAt:null}
+  ]},
+  {templateExerciseId:"C",name:"C",target:normal,sets:[{id:"c",setNo:1,weight:null,reps:null,rir:null,completedAt:null}]}
+ ]};
+
+ it("navigates one exercise at a time without changing set history",()=>{
+  const next=navigateWorkoutExercise(workout,1);
+  expect(next.currentExerciseId).toBe("C");
+  expect(currentExerciseIndex(next)).toBe(2);
+  expect(next.exercises[1].sets[0].completedAt).toBe(5);
+  expect(navigateWorkoutExercise(next,1).currentExerciseId).toBe("C");
+  expect(navigateWorkoutExercise(workout,-1).currentExerciseId).toBe("A");
+ });
+
+ it("restores the stable exercise, completed sets, and paused timer after reload",()=>{
+  const restored=restoreActiveWorkout(structuredClone(workout));
+  expect(restored.currentExerciseId).toBe("B");
+  expect(currentExerciseIndex(restored)).toBe(1);
+  expect(restored.exercises[1].sets[0].completedAt).toBe(5);
+  expect(restored.exercises[1].sets[1].weight).toBe("27,5");
+  expect(restored.rest).toEqual(workout.rest);
+ });
+
+ it("chooses the first unfinished set and migrates older active records",()=>{
+  expect(firstIncompleteSetIndex(workout.exercises[1])).toBe(1);
+  const legacy=structuredClone(workout);delete legacy.currentExerciseId;
+  expect(restoreActiveWorkout(legacy).currentExerciseId).toBe("A");
  });
 });
 

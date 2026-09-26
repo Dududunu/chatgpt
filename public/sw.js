@@ -1,4 +1,4 @@
-const VERSION="gym-pwa-v2";
+const VERSION="gym-pwa-v3";
 const APP_SHELL=["./","./index.html","./manifest.webmanifest","./icon.svg"];
 
 self.addEventListener("install",event=>{

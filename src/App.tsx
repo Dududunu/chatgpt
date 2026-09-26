@@ -2,8 +2,9 @@ import { useEffect, useRef, useState } from "react";
 import { db } from "./db";
 import type { ActiveWorkout, BodyEntry, SetLog, Settings, WorkoutHistory, WorkoutTemplate } from "./types";
 import { actual1rm, bestE1rm, e1rm, volume } from "./stats";
-import { adjustRestTimer, isRestNotificationDue, normalizeSetForCompletion, shouldStartRest, toFiniteNumber, toggleRestPause } from "./workoutLogic";
+import { adjustRestTimer, currentExerciseIndex, firstIncompleteSetIndex, isRestNotificationDue, navigateWorkoutExercise, nextExerciseAfterCompletedSet, normalizeSetForCompletion, restoreActiveWorkout, shouldStartRest, toFiniteNumber, toggleRestPause } from "./workoutLogic";
 import { exerciseSubstitutions } from "./seed";
+import { ExerciseMotion } from "./ExerciseMotion";
 
 type Tab="train"|"history"|"progress"|"body"|"more";
 const uid=()=>crypto.randomUUID();
@@ -23,12 +24,16 @@ export default function App(){
  const audioRef=useRef<HTMLAudioElement|null>(null);
  const startingRef=useRef(false);
  const completingRef=useRef(new Set<string>());
+ const completedSetRef=useRef(new Set<string>());
  const lastRestNoticeRef=useRef("");
 
  async function refresh(){
   setTemplates(await db.templates.toArray());
   setWorkouts(await db.workouts.orderBy("startedAt").reverse().toArray());
-  setActive((await db.active.toArray())[0]||null);
+  const storedActive=(await db.active.toArray())[0]||null;
+  const restoredActive=storedActive?restoreActiveWorkout(storedActive):null;
+  if(storedActive&&restoredActive&&restoredActive!==storedActive) await db.active.put(restoredActive);
+  setActive(restoredActive);
   setSettings((await db.settings.get("main"))||null);
   setBody(await db.body.orderBy("date").reverse().toArray());
  }
@@ -64,13 +69,14 @@ export default function App(){
   startingRef.current=true;
   try{
    const existing=(await db.active.toArray())[0];
-   if(existing){setActive(existing);return;}
-   const w:ActiveWorkout={id:uid(),templateId:t.id,name:t.name,startedAt:Date.now(),rest:null,
+   if(existing){const restored=restoreActiveWorkout(existing);if(restored!==existing)await db.active.put(restored);setActive(restored);return;}
+   const w:ActiveWorkout={id:uid(),templateId:t.id,name:t.name,startedAt:Date.now(),currentExerciseId:t.exercises[0]?.id,rest:null,
     exercises:t.exercises.map(ex=>({templateExerciseId:ex.id,name:ex.name,target:{...ex},sets:Array.from({length:ex.sets},(_,i)=>({id:uid(),setNo:i+1,weight:null,reps:null,rir:null,completedAt:null}))}))};
    await db.active.put(w);setActive(w);
   }finally{startingRef.current=false}
  }
  async function persistActive(w:ActiveWorkout){await db.active.put(w);setActive({...w});}
+ async function navigateExercise(direction:-1|1){if(!active)return;await persistActive(navigateWorkoutExercise(active,direction))}
  async function setField(ei:number,si:number,field:"weight"|"reps"|"rir",value:string){
   if(!active)return; const w=structuredClone(active); const s=w.exercises[ei].sets[si];
   s[field]=value===""?null:value; await persistActive(w);
@@ -78,7 +84,7 @@ export default function App(){
  async function completeSet(ei:number,si:number){
   if(!active)return;
   const key=`${active.id}:${ei}:${si}`;
-  if(completingRef.current.has(key)) return;
+  if(completingRef.current.has(key)||completedSetRef.current.has(key)) return;
   completingRef.current.add(key);
   try{
    const w=structuredClone(active), ex=w.exercises[ei], s=ex.sets[si];
@@ -100,7 +106,12 @@ export default function App(){
     w.rest={exerciseName:ex.name,nextSet:Math.min(si+2,ex.sets.length),startedAt,endsAt};
     lastRestNoticeRef.current="";
    }
+   if(ex.target.superset){
+    const nextExerciseId=nextExerciseAfterCompletedSet(w,ei,si);
+    if(nextExerciseId) w.currentExerciseId=nextExerciseId;
+   }
    await persistActive(w);
+   completedSetRef.current.add(key);
   }finally{completingRef.current.delete(key)}
  }
  async function adjustRest(delta:number){if(!active?.rest)return;const w=structuredClone(active);if(!w.rest)return;w.rest=adjustRestTimer(w.rest,delta,Date.now());lastRestNoticeRef.current="";await persistActive(w)}
@@ -110,6 +121,7 @@ export default function App(){
   if(!active)return;const incomplete=active.exercises.flatMap(e=>e.sets).filter(s=>!s.completedAt).length;
   if(incomplete && !confirm(`${incomplete} niewykonanych serii. Zakończyć mimo to?`))return;
   const done:WorkoutHistory={...structuredClone(active),endedAt:Date.now(),rest:null};
+  delete done.currentExerciseId;
   await db.transaction("rw",db.workouts,db.active,async()=>{await db.workouts.put(done);await db.active.delete(active.id)});
   setActive(null);await refresh();setTab("history");
  }
@@ -145,7 +157,7 @@ export default function App(){
   <audio ref={audioRef} preload="none" />
   <header className="topbar"><div><span className="eyebrow">GYM</span><h1>{active?active.name:tab==="train"?"Trening":tab==="history"?"Historia":tab==="progress"?"Progres":tab==="body"?"Ciało":"Więcej"}</h1></div>{active&&<button className="finish" onClick={finishWorkout}>Zakończ</button>}</header>
   <main>
-   {tab==="train" && (active?<ActiveView active={active} now={now} previousSet={previousSet} setField={setField} completeSet={completeSet} discard={discard}/>:<TrainHome templates={templates} workouts={workouts} startWorkout={startWorkout}/>)}
+   {tab==="train" && (active?<ActiveView active={active} now={now} previousSet={previousSet} setField={setField} completeSet={completeSet} navigateExercise={navigateExercise} discard={discard}/>:<TrainHome templates={templates} workouts={workouts} startWorkout={startWorkout}/>)}
    {tab==="history"&&<History workouts={workouts}/>}
    {tab==="progress"&&<Progress workouts={workouts}/>}
    {tab==="body"&&<Body body={body} addBody={addBody}/>}
@@ -160,8 +172,36 @@ export default function App(){
 function TrainHome({templates,workouts,startWorkout}:{templates:WorkoutTemplate[];workouts:WorkoutHistory[];startWorkout:(t:WorkoutTemplate)=>void}){
  const last=workouts[0];return <section className="section"><div className="sectionhead"><h2>Co dzisiaj trenujesz?</h2>{last&&<p>Ostatnio: <b>{last.name}</b> · {fmtDate(last.startedAt)}</p>}</div><div className="templateList">{templates.map(t=><button className="templateRow" key={t.id} onClick={()=>startWorkout(t)}><span><b>{t.name}</b><small>{t.exercises.length} ćwiczeń</small></span><span>Rozpocznij</span></button>)}</div></section>
 }
-function ActiveView({active,now,previousSet,setField,completeSet,discard}:{active:ActiveWorkout;now:number;previousSet:(n:string,s:number)=>SetLog|null;setField:(e:number,s:number,f:"weight"|"reps"|"rir",v:string)=>void;completeSet:(e:number,s:number)=>void;discard:()=>void}){
- return <section className="workout"><div className="workoutMeta"><span>{fmtDuration(Math.floor((now-active.startedAt)/1000))}</span><button className="textbtn danger" onClick={discard}>Odrzuć</button></div>{active.exercises.map((ex,ei)=><article className="exercise" key={ex.templateExerciseId}><div className="exerciseHead"><div><h3>{ex.name}</h3><p>{ex.target.timed?"Maks. czas":`${ex.target.repMin}–${ex.target.repMax} powt.`} · RIR {ex.target.rir} · tempo {ex.target.tempo}</p></div><span>{Math.round(ex.target.restSec/30)/2} min</span></div><div className="setHeader"><span>Seria</span><span>Poprz.</span><span>kg</span><span>{ex.target.timed?"sek.":"powt."}</span><span>RIR</span><span></span></div>{ex.sets.map((s,si)=>{const p=previousSet(ex.name,s.setNo);return <div className={"setRow "+(s.completedAt?"complete":"")} key={s.id}><span>{s.setNo}</span><button className="prev" onClick={()=>p?.weight!=null&&setField(ei,si,"weight",String(p.weight))}>{p?.weight&&p?.reps?`${p.weight}×${p.reps}`:"—"}</button><input inputMode="decimal" aria-label={`Ciężar seria ${s.setNo}`} value={s.weight??""} disabled={!!s.completedAt} onChange={e=>setField(ei,si,"weight",e.target.value)}/><input inputMode="numeric" aria-label={`${ex.target.timed?"Czas w sekundach":"Powtórzenia"} seria ${s.setNo}`} value={s.reps??""} disabled={!!s.completedAt} onChange={e=>setField(ei,si,"reps",e.target.value)}/><input inputMode="decimal" aria-label={`RIR seria ${s.setNo}`} value={s.rir??""} disabled={!!s.completedAt} onChange={e=>setField(ei,si,"rir",e.target.value)}/><button className="check" disabled={!!s.completedAt} onClick={()=>completeSet(ei,si)}>{s.completedAt?"✓":"○"}</button></div>})}</article>)}</section>
+function ActiveView({active,now,previousSet,setField,completeSet,navigateExercise,discard}:{active:ActiveWorkout;now:number;previousSet:(n:string,s:number)=>SetLog|null;setField:(e:number,s:number,f:"weight"|"reps"|"rir",v:string)=>void;completeSet:(e:number,s:number)=>void;navigateExercise:(direction:-1|1)=>void;discard:()=>void}){
+ const exerciseIndex=currentExerciseIndex(active),exerciseCount=active.exercises.length;
+ const ex=active.exercises[exerciseIndex];
+ if(!ex) return <section className="workout"><Empty text="Brak ćwiczeń w aktywnym treningu."/></section>;
+ const activeSetIndex=firstIncompleteSetIndex(ex),activeSet=activeSetIndex>=0?ex.sets[activeSetIndex]:null;
+ const lastCompleted=[...ex.sets].reverse().find(set=>set.completedAt);
+ const previous=activeSet?previousSet(ex.name,activeSet.setNo):null;
+ const progress=exerciseCount?((exerciseIndex+1)/exerciseCount)*100:0;
+ return <section className="workout">
+  <div className="workoutMeta"><span>{fmtDuration(Math.floor((now-active.startedAt)/1000))}</span><button className="textbtn danger" onClick={discard}>Odrzuć</button></div>
+  <div className="exerciseProgress"><div><b>{exerciseIndex+1} / {exerciseCount}</b><span>ćwiczeń</span></div><div className="progressTrack" role="progressbar" aria-label="Postęp treningu" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(progress)}><span style={{width:`${progress}%`}}/></div></div>
+  <article className="exercise" key={ex.templateExerciseId}>
+   <div className="exerciseHead"><div><h3>{ex.name}</h3><p>{ex.target.sets} serie · {ex.target.timed?"czas":`${ex.target.repMin}–${ex.target.repMax} powt.`} · RIR {ex.target.rir} · tempo {ex.target.tempo}</p></div><span>Przerwa {fmtDuration(ex.target.restSec)}</span></div>
+   <ExerciseMotion exerciseId={ex.templateExerciseId}/>
+   <div className="setProgress" aria-label="Wykonane serie">{ex.sets.map((set,index)=><span key={set.id} className={set.completedAt?"setDot done":index===activeSetIndex?"setDot current":"setDot"}>{set.completedAt?`${set.setNo} ✓`:set.setNo}</span>)}</div>
+   {activeSet?<>
+    <div className="currentSetHead"><b>SERIA {activeSet.setNo}</b>{previous&&<span className="previousValue">Poprzednio: {previous.weight??"—"} × {previous.reps??"—"}</span>}
+     {!previous&&lastCompleted&&<span>Poprzednia seria: {lastCompleted.weight??"—"} × {lastCompleted.reps??"—"}</span>}
+    </div>
+    <div className="inputLabels"><span>KG</span><span>{ex.target.timed?"SEK.":"POWT."}</span><span>RIR</span></div>
+    <div className="activeSetInputs">
+     <input inputMode="decimal" aria-label={`Ciężar seria ${activeSet.setNo}`} placeholder="kg" value={activeSet.weight??""} onChange={e=>setField(exerciseIndex,activeSetIndex,"weight",e.target.value)}/>
+     <input inputMode="numeric" aria-label={`${ex.target.timed?"Czas w sekundach":"Powtórzenia"} seria ${activeSet.setNo}`} placeholder={ex.target.timed?"sek.":"powt."} value={activeSet.reps??""} onChange={e=>setField(exerciseIndex,activeSetIndex,"reps",e.target.value)}/>
+     <input inputMode="numeric" aria-label={`RIR seria ${activeSet.setNo}`} placeholder="RIR" value={activeSet.rir??""} onChange={e=>setField(exerciseIndex,activeSetIndex,"rir",e.target.value)}/>
+    </div>
+    <button className="completeSetButton" onClick={()=>completeSet(exerciseIndex,activeSetIndex)}>✓ Zakończ serię</button>
+   </>:<p className="allSetsDone">Wszystkie serie wykonane.</p>}
+  </article>
+  <div className="exerciseNavigation"><button onClick={()=>navigateExercise(-1)} disabled={exerciseIndex===0}>← Poprzednie</button><button onClick={()=>navigateExercise(1)} disabled={exerciseIndex===exerciseCount-1}>Następne ćwiczenie →</button></div>
+ </section>;
 }
 function History({workouts}:{workouts:WorkoutHistory[]}){return <section className="section">{workouts.length===0?<Empty text="Brak zapisanych treningów."/>:<div className="historyList">{workouts.map(w=><details key={w.id} className="historyItem"><summary><div><b>{w.name}</b><span>{fmtDate(w.startedAt)}</span></div><div className="right"><b>{fmtDuration(Math.floor((w.endedAt-w.startedAt)/1000))}</b><span>{Math.round(volume(w)).toLocaleString("pl-PL")} kg</span></div></summary><div className="historyBody">{w.exercises.map(e=><div key={e.templateExerciseId}><h4>{e.name}</h4>{e.sets.filter(s=>s.completedAt).map(s=><p key={s.id}>{s.setNo}. {s.weight} kg × {s.reps}{s.rir!=null?` · RIR ${s.rir}`:""}</p>)}</div>)}</div></details>)}</div>}</section>}
 function Progress({workouts}:{workouts:WorkoutHistory[]}){

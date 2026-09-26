@@ -1,0 +1,38 @@
+# Exercise media sources and rights audit
+
+All movement previews below are original inline SVG line drawings authored for this repository. The UI creates only the currently selected exercise's SVG; it makes no media requests to an external host. SVG, CSS, and technique cues ship with the app bundle, so the preview continues to work offline after the PWA has loaded.
+
+| Exercise in plan | Local visual mapping | Provider | Source URL | License / use terms | Local path |
+| --- | --- | --- | --- | --- | --- |
+| Wyciskanie hantli na ławce skośnej | Leżąca pozycja, poziomy press | Gym PWA, original SVG | [ExerciseMotion.tsx](https://github.com/Dududunu/chatgpt/blob/main/src/ExerciseMotion.tsx) | Created in this repository; no third-party asset | `src/ExerciseMotion.tsx` |
+| Focze wiosło hantlami | Podparta pozycja, wiosłowanie | Gym PWA, original SVG | [ExerciseMotion.tsx](https://github.com/Dududunu/chatgpt/blob/main/src/ExerciseMotion.tsx) | Created in this repository; no third-party asset | `src/ExerciseMotion.tsx` |
+| Podciąganie podchwytem | Zwis i podciąganie pionowe | Gym PWA, original SVG | [ExerciseMotion.tsx](https://github.com/Dududunu/chatgpt/blob/main/src/ExerciseMotion.tsx) | Created in this repository; no third-party asset | `src/ExerciseMotion.tsx` |
+| Wznosy w bok na wyciągu | Stojąca pozycja, odwodzenie ramienia | Gym PWA, original SVG | [ExerciseMotion.tsx](https://github.com/Dududunu/chatgpt/blob/main/src/ExerciseMotion.tsx) | Created in this repository; no third-party asset | `src/ExerciseMotion.tsx` |
+| Uginanie młotkowe z warkoczem | Stojąca pozycja, zgięcie łokcia | Gym PWA, original SVG | [ExerciseMotion.tsx](https://github.com/Dududunu/chatgpt/blob/main/src/ExerciseMotion.tsx) | Created in this repository; no third-party asset | `src/ExerciseMotion.tsx` |
+| Prostowanie ramion z warkoczem | Stojąca pozycja, wyprost łokcia w dół | Gym PWA, original SVG | [ExerciseMotion.tsx](https://github.com/Dududunu/chatgpt/blob/main/src/ExerciseMotion.tsx) | Created in this repository; no third-party asset | `src/ExerciseMotion.tsx` |
+| Przysiad ze sztangą | Stojąca pozycja, przysiad ze sztangą | Gym PWA, original SVG | [ExerciseMotion.tsx](https://github.com/Dududunu/chatgpt/blob/main/src/ExerciseMotion.tsx) | Created in this repository; no third-party asset | `src/ExerciseMotion.tsx` |
+| Wykroki chodzone z hantlami | Krok wykroczny i zmiana nóg | Gym PWA, original SVG | [ExerciseMotion.tsx](https://github.com/Dududunu/chatgpt/blob/main/src/ExerciseMotion.tsx) | Created in this repository; no third-party asset | `src/ExerciseMotion.tsx` |
+| Hip thrust ze sztangą | Unoszenie bioder przy ławce | Gym PWA, original SVG | [ExerciseMotion.tsx](https://github.com/Dududunu/chatgpt/blob/main/src/ExerciseMotion.tsx) | Created in this repository; no third-party asset | `src/ExerciseMotion.tsx` |
+| Wspięcia na palce stojąc | Stojące wspięcie na palce | Gym PWA, original SVG | [ExerciseMotion.tsx](https://github.com/Dududunu/chatgpt/blob/main/src/ExerciseMotion.tsx) | Created in this repository; no third-party asset | `src/ExerciseMotion.tsx` |
+| Uginanie kolan na maszynie | Leżące uginanie nóg | Gym PWA, original SVG | [ExerciseMotion.tsx](https://github.com/Dududunu/chatgpt/blob/main/src/ExerciseMotion.tsx) | Created in this repository; no third-party asset | `src/ExerciseMotion.tsx` |
+| Allahy na wyciągu | Zwijanie tułowia w klęku | Gym PWA, original SVG | [ExerciseMotion.tsx](https://github.com/Dududunu/chatgpt/blob/main/src/ExerciseMotion.tsx) | Created in this repository; no third-party asset | `src/ExerciseMotion.tsx` |
+| OHP ze sztangą | Stojące wyciskanie nad głowę | Gym PWA, original SVG | [ExerciseMotion.tsx](https://github.com/Dududunu/chatgpt/blob/main/src/ExerciseMotion.tsx) | Created in this repository; no third-party asset | `src/ExerciseMotion.tsx` |
+| Wyciskanie sztangi na ławce płaskiej | Leżąca pozycja, wyciskanie sztangi | Gym PWA, original SVG | [ExerciseMotion.tsx](https://github.com/Dududunu/chatgpt/blob/main/src/ExerciseMotion.tsx) | Created in this repository; no third-party asset | `src/ExerciseMotion.tsx` |
+| Ściąganie jednorącz z wyciągu górnego | Siedzące ściąganie łokcia w dół | Gym PWA, original SVG | [ExerciseMotion.tsx](https://github.com/Dududunu/chatgpt/blob/main/src/ExerciseMotion.tsx) | Created in this repository; no third-party asset | `src/ExerciseMotion.tsx` |
+| Rozpiętki Butterfly | Siedzące przywodzenie ramion | Gym PWA, original SVG | [ExerciseMotion.tsx](https://github.com/Dududunu/chatgpt/blob/main/src/ExerciseMotion.tsx) | Created in this repository; no third-party asset | `src/ExerciseMotion.tsx` |
+| Odwrotne rozpiętki Butterfly | Siedzące odwodzenie ramion | Gym PWA, original SVG | [ExerciseMotion.tsx](https://github.com/Dududunu/chatgpt/blob/main/src/ExerciseMotion.tsx) | Created in this repository; no third-party asset | `src/ExerciseMotion.tsx` |
+| Uginanie ramion z hantlami na ławce skośnej | Podparte uginanie łokci | Gym PWA, original SVG | [ExerciseMotion.tsx](https://github.com/Dududunu/chatgpt/blob/main/src/ExerciseMotion.tsx) | Created in this repository; no third-party asset | `src/ExerciseMotion.tsx` |
+| Wyciskanie francuskie z hantlami leżąc | Leżący wyprost łokci | Gym PWA, original SVG | [ExerciseMotion.tsx](https://github.com/Dududunu/chatgpt/blob/main/src/ExerciseMotion.tsx) | Created in this repository; no third-party asset | `src/ExerciseMotion.tsx` |
+| RDL | Zawias biodrowy ze sztangą | Gym PWA, original SVG | [ExerciseMotion.tsx](https://github.com/Dududunu/chatgpt/blob/main/src/ExerciseMotion.tsx) | Created in this repository; no third-party asset | `src/ExerciseMotion.tsx` |
+| Leg press | Siedzące wypychanie platformy | Gym PWA, original SVG | [ExerciseMotion.tsx](https://github.com/Dududunu/chatgpt/blob/main/src/ExerciseMotion.tsx) | Created in this repository; no third-party asset | `src/ExerciseMotion.tsx` |
+| Wyprosty tułowia na ławce rzymskiej | Wyprost tułowia na podporze | Gym PWA, original SVG | [ExerciseMotion.tsx](https://github.com/Dududunu/chatgpt/blob/main/src/ExerciseMotion.tsx) | Created in this repository; no third-party asset | `src/ExerciseMotion.tsx` |
+| Wspięcia na palce siedząc | Siedzące wspięcie na palce | Gym PWA, original SVG | [ExerciseMotion.tsx](https://github.com/Dududunu/chatgpt/blob/main/src/ExerciseMotion.tsx) | Created in this repository; no third-party asset | `src/ExerciseMotion.tsx` |
+| Wyprosty nóg na maszynie jednonóż | Siedzący jednonóż wyprost kolana | Gym PWA, original SVG | [ExerciseMotion.tsx](https://github.com/Dududunu/chatgpt/blob/main/src/ExerciseMotion.tsx) | Created in this repository; no third-party asset | `src/ExerciseMotion.tsx` |
+| Spacer farmera jednorącz | Marsz z ciężarem po jednej stronie | Gym PWA, original SVG | [ExerciseMotion.tsx](https://github.com/Dududunu/chatgpt/blob/main/src/ExerciseMotion.tsx) | Created in this repository; no third-party asset | `src/ExerciseMotion.tsx` |
+
+## Third-party source review
+
+- ExerciseDB repository: [ExerciseDB/exercisedb-api](https://github.com/ExerciseDB/exercisedb-api). Its README describes an API containing images, videos, and GIFs and links to separate [terms of use](https://dub.sh/exercisedb-api-tos). The repository's `AGPL-3.0` license covers repository code; it does not by itself verify the usage rights for each media item in the exercise dataset. No ExerciseDB media was downloaded or redistributed.
+- AscendAPI: no asset was selected from it, so the app does not depend on its API, terms, or uptime.
+
+For an unmapped exercise added later, the UI displays `BRAK PODGLĄDU RUCHU` instead of a broken image.

@@ -42,6 +42,59 @@ export function shouldStartRest(workout:ActiveWorkout,exerciseIndex:number,setIn
  return roundComplete && groupExercises.some(hasUnfinishedLaterSet);
 }
 
+export function currentExerciseIndex(workout:ActiveWorkout):number{
+ const savedIndex=workout.exercises.findIndex(ex=>ex.templateExerciseId===workout.currentExerciseId);
+ return savedIndex>=0?savedIndex:0;
+}
+
+export function restoreActiveWorkout(workout:ActiveWorkout):ActiveWorkout{
+ if(workout.exercises.some(ex=>ex.templateExerciseId===workout.currentExerciseId)) return workout;
+ const first=workout.exercises[0];
+ return first?{...workout,currentExerciseId:first.templateExerciseId}:workout;
+}
+
+export function selectWorkoutExercise(workout:ActiveWorkout,exerciseId:string):ActiveWorkout{
+ if(!workout.exercises.some(ex=>ex.templateExerciseId===exerciseId)) return workout;
+ return {...workout,currentExerciseId:exerciseId};
+}
+
+export function navigateWorkoutExercise(workout:ActiveWorkout,direction:-1|1):ActiveWorkout{
+ if(workout.exercises.length===0) return workout;
+ const nextIndex=Math.max(0,Math.min(workout.exercises.length-1,currentExerciseIndex(workout)+direction));
+ return {...workout,currentExerciseId:workout.exercises[nextIndex].templateExerciseId};
+}
+
+export function firstIncompleteSetIndex(exercise:{sets:SetLog[]}):number{
+ return exercise.sets.findIndex(set=>!set.completedAt);
+}
+
+/**
+ * Supersets alternate at the same set number. Once a round is complete, the
+ * pointer advances to the next unfinished member so the rest timer leads back
+ * to A for the next round.
+ */
+export function nextExerciseAfterCompletedSet(workout:ActiveWorkout,exerciseIndex:number,setIndex:number):string|null{
+ const current=workout.exercises[exerciseIndex];
+ const group=current?.target.superset;
+ if(!current||!group) return current?.templateExerciseId??null;
+
+ const groupMembers=workout.exercises
+  .map((exercise,index)=>({exercise,index}))
+  .filter(item=>item.exercise.target.superset===group);
+ const partner=groupMembers.find(item=>item.index!==exerciseIndex&&item.exercise.sets[setIndex]&&!item.exercise.sets[setIndex].completedAt);
+ if(partner) return partner.exercise.templateExerciseId;
+
+ if(shouldStartRest(workout,exerciseIndex,setIndex)){
+  const nextRound=groupMembers.find(({exercise})=>exercise.sets.slice(setIndex+1).some(set=>!set.completedAt));
+  if(nextRound) return nextRound.exercise.templateExerciseId;
+ }
+
+ const lastGroupIndex=Math.max(...groupMembers.map(item=>item.index));
+ const laterExercise=workout.exercises.slice(lastGroupIndex+1).find(ex=>ex.target.superset!==group&&ex.sets.some(set=>!set.completedAt));
+ const otherExercise=workout.exercises.find(ex=>ex.target.superset!==group&&ex.sets.some(set=>!set.completedAt));
+ return laterExercise?.templateExerciseId??otherExercise?.templateExerciseId??current.templateExerciseId;
+}
+
 export function adjustRestTimer(rest:RestState,deltaSeconds:number,now:number):RestState{
  const adjusted={...rest};
  if(adjusted.pausedRemaining!==undefined){

@@ -49,6 +49,8 @@ export type ActiveWorkout={
  name:string;
  startedAt:number;
  exercises:ExerciseLog[];
+ /** Stable exercise identity for restoring the active screen if plan order changes. */
+ currentExerciseId?:string;
  rest?:RestState|null;
 };
 
