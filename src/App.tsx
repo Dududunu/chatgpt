@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { db } from "./db";
 import type { ActiveWorkout, BodyEntry, SetLog, Settings, WorkoutHistory, WorkoutTemplate } from "./types";
 import { actual1rm, bestE1rm, e1rm, volume } from "./stats";
-import { normalizeSetForCompletion, shouldStartRest, toFiniteNumber } from "./workoutLogic";
+import { adjustRestTimer, isRestNotificationDue, normalizeSetForCompletion, shouldStartRest, toFiniteNumber, toggleRestPause } from "./workoutLogic";
 import { exerciseSubstitutions } from "./seed";
 
 type Tab="train"|"history"|"progress"|"body"|"more";
@@ -34,16 +34,28 @@ export default function App(){
  }
  useEffect(()=>{refresh();const id=setInterval(()=>setNow(Date.now()),500);return()=>clearInterval(id)},[]);
  useEffect(()=>{
-  if(!active?.rest) return;
-  const remaining=active.rest.endsAt-now;
-  if(remaining<=0 && active.rest.pausedRemaining===undefined){
-   const noticeKey=`${active.id}:${active.rest.startedAt}:${active.rest.endsAt}`;
-   if(lastRestNoticeRef.current===noticeKey) return;
-   lastRestNoticeRef.current=noticeKey;
-   if(settings?.vibration && navigator.vibrate) navigator.vibrate([80,60,80]);
-   if(settings?.sound && audioRef.current?.src) audioRef.current.play().catch(()=>{});
-  }
- },[active?.rest?.endsAt,now,settings?.sound,settings?.vibration]);
+  const rest=active?.rest;
+  if(!active || !rest || !isRestNotificationDue(rest,now)) return;
+  const noticeKey=`${active.id}:${rest.startedAt}:${rest.endsAt}`;
+  if(lastRestNoticeRef.current===noticeKey) return;
+  lastRestNoticeRef.current=noticeKey;
+  if(settings?.vibration && navigator.vibrate) navigator.vibrate([80,60,80]);
+  if(settings?.sound && audioRef.current?.src) audioRef.current.play().catch(()=>{});
+
+  const notifiedAt=Date.now();
+  void db.transaction("rw",db.active,async()=>{
+   const stored=await db.active.get(active.id);
+   if(!stored?.rest || stored.rest.startedAt!==rest.startedAt || stored.rest.endsAt!==rest.endsAt || stored.rest.notifiedAt!==undefined) return null;
+   stored.rest.notifiedAt=notifiedAt;
+   await db.active.put(stored);
+   return stored;
+  }).then(stored=>{
+   if(stored) setActive(current=>{
+    if(current?.id!==stored.id || current.rest?.startedAt!==rest.startedAt || current.rest.endsAt!==rest.endsAt) return current;
+    return {...current,rest:stored.rest};
+   });
+  }).catch(()=>{});
+ },[active?.id,active?.rest?.startedAt,active?.rest?.endsAt,active?.rest?.pausedRemaining,active?.rest?.notifiedAt,now,settings?.sound,settings?.vibration]);
 
  const notify=(s:string)=>{setToast(s);setTimeout(()=>setToast(""),2200)};
 
@@ -61,7 +73,7 @@ export default function App(){
  async function persistActive(w:ActiveWorkout){await db.active.put(w);setActive({...w});}
  async function setField(ei:number,si:number,field:"weight"|"reps"|"rir",value:string){
   if(!active)return; const w=structuredClone(active); const s=w.exercises[ei].sets[si];
-  (s as any)[field]=value===""?null:value; await persistActive(w);
+  s[field]=value===""?null:value; await persistActive(w);
  }
  async function completeSet(ei:number,si:number){
   if(!active)return;
@@ -77,8 +89,11 @@ export default function App(){
    s.reps=normalized.reps;
    s.rir=normalized.rir;
    s.completedAt=Date.now();
-   const oldBest=bestE1rm(workouts,ex.name),newE=e1rm(normalized.weight,normalized.reps);
-   if(newE>oldBest && oldBest>0) notify(`Nowy e1RM PR • ${newE.toFixed(1)} kg`);
+   const oldBest=ex.target.timed?0:bestE1rm(workouts,ex.name);
+   const newE=ex.target.timed?null:e1rm(normalized.weight,normalized.reps);
+   if(newE!==null && newE>oldBest && oldBest>0) notify(`Nowy e1RM PR • ${newE.toFixed(1)} kg`);
+   w.rest=null;
+   lastRestNoticeRef.current="";
    if(settings?.autoRest!==false && shouldStartRest(w,ei,si)){
     const startedAt=Date.now(), endsAt=startedAt+ex.target.restSec*1000;
     s.restStartedAt=startedAt;s.restEndsAt=endsAt;
@@ -88,9 +103,9 @@ export default function App(){
    await persistActive(w);
   }finally{completingRef.current.delete(key)}
  }
- async function adjustRest(delta:number){if(!active?.rest)return;const w=structuredClone(active);if(w.rest!.pausedRemaining!==undefined){w.rest!.pausedRemaining=Math.max(0,w.rest!.pausedRemaining+delta*1000)}else{w.rest!.endsAt=Math.max(Date.now(),w.rest!.endsAt+delta*1000)}lastRestNoticeRef.current="";await persistActive(w)}
+ async function adjustRest(delta:number){if(!active?.rest)return;const w=structuredClone(active);if(!w.rest)return;w.rest=adjustRestTimer(w.rest,delta,Date.now());lastRestNoticeRef.current="";await persistActive(w)}
  async function skipRest(){if(!active)return;const w=structuredClone(active);w.rest=null;await persistActive(w)}
- async function pauseRest(){if(!active?.rest)return;const w=structuredClone(active);if(w.rest!.pausedRemaining!==undefined){w.rest!.endsAt=Date.now()+w.rest!.pausedRemaining;delete w.rest!.pausedRemaining;delete w.rest!.notifiedAt}else w.rest!.pausedRemaining=Math.max(0,w.rest!.endsAt-Date.now());await persistActive(w)}
+ async function pauseRest(){if(!active?.rest)return;const w=structuredClone(active);if(!w.rest)return;w.rest=toggleRestPause(w.rest,Date.now());await persistActive(w)}
  async function finishWorkout(){
   if(!active)return;const incomplete=active.exercises.flatMap(e=>e.sets).filter(s=>!s.completedAt).length;
   if(incomplete && !confirm(`${incomplete} niewykonanych serii. Zakończyć mimo to?`))return;
@@ -102,7 +117,7 @@ export default function App(){
  function previousSet(name:string,setNo:number){for(const w of workouts){const ex=w.exercises.find(x=>x.name===name);const s=ex?.sets.find(x=>x.setNo===setNo&&x.completedAt);if(s)return s}return null}
  async function addBody(fd:FormData){
   const ent:BodyEntry={id:uid(),date:Date.now()};
-  for(const k of ["weight","waist","chest","arm"] as const){const v=String(fd.get(k)||"");const n=parseNum(v);if(n!=null)(ent as any)[k]=n}
+  for(const k of ["weight","waist","chest","arm"] as const){const v=String(fd.get(k)||"");const n=parseNum(v);if(n!=null)ent[k]=n}
   ent.note=String(fd.get("note")||"");await db.body.put(ent);await refresh();notify("Pomiar zapisany");
  }
  async function exportJson(){
@@ -120,7 +135,8 @@ export default function App(){
   const rows=[["date","workout","exercise","set","kg","reps","rir","e1rm"]];
   for(const w of workouts)for(const e of w.exercises)for(const s of e.sets)if(s.completedAt){
    const weight=toFiniteNumber(s.weight),reps=toFiniteNumber(s.reps);
-   rows.push([new Date(w.startedAt).toISOString(),w.name,e.name,String(s.setNo),String(weight??""),String(reps??""),String(toFiniteNumber(s.rir)??""),weight!==null&&reps!==null?e1rm(weight,reps).toFixed(2):""]);
+   const estimate=!e.target.timed&&weight!==null&&reps!==null&&weight>=0&&reps>0&&Number.isInteger(reps)?e1rm(weight,reps):null;
+   rows.push([new Date(w.startedAt).toISOString(),w.name,e.name,String(s.setNo),String(weight??""),String(reps??""),String(toFiniteNumber(s.rir)??""),estimate!==null&&Number.isFinite(estimate)?estimate.toFixed(2):""]);
   }
   const csv=rows.map(r=>r.map(v=>`"${String(v).replaceAll('"','""')}"`).join(",")).join("\n");const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([csv],{type:"text/csv"}));a.download="gym-history.csv";a.click();URL.revokeObjectURL(a.href);
  }

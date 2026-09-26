@@ -1,4 +1,4 @@
-import type { ActiveWorkout, ExerciseTemplate, NumericField, SetLog } from "./types";
+import type { ActiveWorkout, ExerciseTemplate, NumericField, RestState, SetLog } from "./types";
 
 export function toFiniteNumber(value:NumericField):number|null{
  if(typeof value==="number") return Number.isFinite(value)?value:null;
@@ -19,18 +19,52 @@ export function normalizeSetForCompletion(set:SetLog,target:ExerciseTemplate):
  if(reps===null || reps<=0) return {ok:false,message:target.timed?"Wpisz czas w sekundach.":"Wpisz liczbę powtórzeń."};
  if(!target.timed && !Number.isInteger(reps)) return {ok:false,message:"Liczba powtórzeń musi być całkowita."};
  if(rir!==null && (rir<0 || rir>10)) return {ok:false,message:"RIR powinien być w zakresie 0–10."};
+ if(!Number.isFinite(weight*reps) || (!target.timed && !Number.isFinite(weight*(1+reps/30)))){
+  return {ok:false,message:"Wartość jest zbyt duża do obliczeń."};
+ }
 
  return {ok:true,weight,reps,rir};
 }
 
 export function shouldStartRest(workout:ActiveWorkout,exerciseIndex:number,setIndex:number):boolean{
  const current=workout.exercises[exerciseIndex];
+ if(!current || !current.sets[setIndex]?.completedAt) return false;
  const group=current.target.superset;
- if(!group) return true;
+ const hasUnfinishedLaterSet=(exercise:typeof current)=>
+  exercise.sets.slice(setIndex+1).some(set=>!set.completedAt);
+ if(!group) return hasUnfinishedLaterSet(current);
 
  const groupExercises=workout.exercises.filter(ex=>ex.target.superset===group);
- return groupExercises.every(ex=>{
+ const roundComplete=groupExercises.every(ex=>{
   const pairedSet=ex.sets[setIndex];
   return !pairedSet || Boolean(pairedSet.completedAt);
  });
+ return roundComplete && groupExercises.some(hasUnfinishedLaterSet);
+}
+
+export function adjustRestTimer(rest:RestState,deltaSeconds:number,now:number):RestState{
+ const adjusted={...rest};
+ if(adjusted.pausedRemaining!==undefined){
+  adjusted.pausedRemaining=Math.max(0,adjusted.pausedRemaining+deltaSeconds*1000);
+ }else{
+  adjusted.endsAt=Math.max(now,adjusted.endsAt+deltaSeconds*1000);
+ }
+ delete adjusted.notifiedAt;
+ return adjusted;
+}
+
+export function toggleRestPause(rest:RestState,now:number):RestState{
+ const toggled={...rest};
+ if(toggled.pausedRemaining!==undefined){
+  toggled.endsAt=now+toggled.pausedRemaining;
+  delete toggled.pausedRemaining;
+  delete toggled.notifiedAt;
+ }else{
+  toggled.pausedRemaining=Math.max(0,toggled.endsAt-now);
+ }
+ return toggled;
+}
+
+export function isRestNotificationDue(rest:RestState,now:number):boolean{
+ return rest.pausedRemaining===undefined&&rest.notifiedAt===undefined&&rest.endsAt<=now;
 }
