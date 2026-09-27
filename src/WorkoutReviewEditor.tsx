@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { WorkoutHistory, WorkoutPhotoQueueEntry } from "./types";
+import { RatingStars, StarIcon } from "./AppIcons";
 import { compressWorkoutPhoto } from "./workoutPhoto";
 import { localWorkoutPhoto, queueWorkoutPhotoRemoval, queueWorkoutPhotoUpload, resolveWorkoutPhoto } from "./workoutMedia";
 import { countReviewWords, MAX_REVIEW_SENTENCES, MAX_REVIEW_WORDS, validateWorkoutRating, validateWorkoutReview } from "./workoutReview";
@@ -122,7 +123,7 @@ export function WorkoutReviewEditor({workout,userId,readOnly=false,syncStatus,on
    <div className="summary-section review-rating-section">
     <h3>JAK POSZEDŁ TRENING?</h3>
     <div className="workout-rating" role="group" aria-label="Ocena treningu">
-     {[1,2,3,4,5].map(value=><button key={value} type="button" className={value<=(rating??0)?"selected":""} aria-label={`${value} ${value===1?"gwiazdka":"gwiazdki"}`} aria-pressed={rating===value} disabled={working} onClick={()=>void changeRating(rating===value?null:value)}>{value<=(rating??0)?"★":"☆"}</button>)}
+     {[1,2,3,4,5].map(value=><button key={value} type="button" className={value<=(rating??0)?"selected":""} aria-label={`${value} ${value===1?"gwiazdka":"gwiazdki"}`} aria-pressed={rating===value} disabled={working} onClick={()=>void changeRating(rating===value?null:value)}><StarIcon filled={value<=(rating??0)}/></button>)}
     </div>
     {rating!==null&&<button type="button" className="review-clear-rating" disabled={working} onClick={()=>void changeRating(null)}>Wyczyść ocenę</button>}
    </div>
@@ -133,7 +134,7 @@ export function WorkoutReviewEditor({workout,userId,readOnly=false,syncStatus,on
     {reviewValidation.error&&<p className="review-error" role="alert">{reviewValidation.error}</p>}
    </div>
   </>}
-  {readOnly&&workout.rating!=null&&<div className="summary-section review-readonly-rating"><h3>OCENA</h3><p aria-label={`${workout.rating} z 5 gwiazdek`}>{"★".repeat(storedRating(workout.rating)??0)}{"☆".repeat(5-(storedRating(workout.rating)??0))}</p></div>}
+  {readOnly&&workout.rating!=null&&<div className="summary-section review-readonly-rating"><h3>OCENA</h3><p><RatingStars rating={storedRating(workout.rating)??0}/></p></div>}
   {readOnly&&workout.reviewText&&<div className="summary-section review-readonly-note"><h3>NOTATKA</h3><p>{workout.reviewText}</p></div>}
   {(!readOnly||workout.photoPath)&&<div className="summary-section workout-photo-section">
    {readOnly?workout.photoPath&&<h3>ZDJĘCIE</h3>:<h3>ZDJĘCIE PO TRENINGU</h3>}

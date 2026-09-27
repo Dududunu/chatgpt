@@ -5,6 +5,7 @@ import { prepareCloudUser, pushCloudState, startAutoSync, type CloudSyncStatus, 
 import { supabase } from "./supabase";
 import { authErrorMessage, signOutWithSync } from "./authMessages";
 import { validateDisplayName } from "./accountLogic";
+import { BrandLockup } from "./AppIcons";
 import { changePassword as changePasswordAction,deleteAccountFlow,loginWithPassword,requestPasswordReset,signupWithDisplayName,updatePassword } from "./authActions";
 
 export default function AuthShell(){
@@ -84,9 +85,9 @@ export default function AuthShell(){
  }
 
  if(passwordRecovery)return <AuthScreen initialMode="recovery" onRecoveryComplete={()=>setPasswordRecovery(false)}/>;
- if(session===undefined)return <div className="auth-shell"><p>Ładowanie…</p></div>;
+ if(session===undefined)return <div className="auth-shell auth-loading"><BrandLockup/><span className="loading-mark" aria-hidden="true"/><p>Przygotowuję trening</p></div>;
  if(!session)return <AuthScreen/>;
- if(!ready)return <div className="auth-shell"><div className="auth-card"><span className="eyebrow">GYM PWA</span><h1>Wczytywanie profilu</h1><p>Łączę Twoje dane treningowe z chmurą.</p></div></div>;
+ if(!ready)return <div className="auth-shell auth-loading"><BrandLockup/><h1>Wczytywanie profilu</h1><p>Łączę Twoje dane treningowe z chmurą.</p><div className="skeleton-stack" aria-hidden="true"><i/><i/><i/></div></div>;
 
  return <App userId={session.user.id} accountEmail={session.user.email??"Konto"} displayName={displayName} syncStatus={syncStatus} onSyncNow={syncNow} onSignOut={signOut} onUpdateDisplayName={saveDisplayName} onChangePassword={changeAccountPassword} onDeleteAccount={deleteAccount}/>;
 }
@@ -123,7 +124,7 @@ export function AuthScreen({initialMode="login",onRecoveryComplete}:{initialMode
  const title=mode==="login"?"Zaloguj się":mode==="signup"?"Utwórz konto":mode==="reset"?"Reset hasła":"Ustaw nowe hasło";
  const description=mode==="login"?"Twój trening. Twój progres.":mode==="signup"?"Zapisz plan, historię i progres na swoim koncie.":mode==="reset"?"Wyślemy link do zmiany hasła na podany adres email.":"Wpisz nowe hasło do swojego konta.";
  return <div className="auth-shell"><form className="auth-card" onSubmit={submit}>
-  <span className="eyebrow">GYM</span>
+  <BrandLockup/>
   <h1>{title}</h1>
   <p>{description}</p>
   {mode==="signup"&&<label className="field-label">IMIĘ<input autoComplete="given-name" required minLength={2} maxLength={30} value={name} onChange={event=>setName(event.target.value)}/></label>}

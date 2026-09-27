@@ -7,7 +7,7 @@ import { createWorkoutSnapshot,inheritNextSessionNotes,prefillPreviousWeights,re
 import { defaultTemplates } from "./seed";
 import { calculatePlates, generateWarmupSets, isBarbellExercise } from "./barbellTools";
 import { ExerciseImage } from "./ExerciseImage";
-import { AppIcon, type AppIconName } from "./AppIcons";
+import { AppIcon, BrandLockup, type AppIconName } from "./AppIcons";
 import { createManualRest, remainingRestMs, restSessionKey, shouldShowFullscreenTimer } from "./timerLogic";
 const PlanScreen=lazy(()=>import("./PlanScreen").then(module=>({default:module.PlanScreen})));
 const HistoryScreen=lazy(()=>import("./HistoryScreen").then(module=>({default:module.HistoryScreen})));
@@ -74,8 +74,8 @@ export default function App({userId,accountEmail,displayName,syncStatus,onSyncNo
   const media=window.matchMedia("(prefers-color-scheme: light)");
   const applyTheme=()=>{
    const light=settings?.theme==="light"||(settings?.theme==="system"&&media.matches);
-   document.documentElement.style.setProperty("--page-bg",light?"#f6f6f3":"#0b0c0b");
-   document.querySelector('meta[name="theme-color"]')?.setAttribute("content",light?"#f6f6f3":"#0b0c0b");
+   document.documentElement.style.setProperty("--page-bg",light?"#e8ebe4":"#090c08");
+   document.querySelector('meta[name="theme-color"]')?.setAttribute("content",light?"#e8ebe4":"#090c08");
   };
   applyTheme();media.addEventListener("change",applyTheme);
   return()=>media.removeEventListener("change",applyTheme);
@@ -405,14 +405,14 @@ export default function App({userId,accountEmail,displayName,syncStatus,onSyncNo
  const pageTitle=tab==="train"&&active?active.name:labels[tab];
  return <div className="app" data-theme={settings?.theme??"dark"}>
   <header className="topbar">
-   <div className="topbar-copy"><span className="eyebrow">GYM PWA</span><h1>{pageTitle}</h1><span className={`sync-inline ${syncStatus}`} aria-live="polite"><i aria-hidden="true"/> {syncLabel}</span>{active&&tab!=="train"&&<span className="workout-live">Trening trwa · {fmtDuration(Math.floor((now-active.startedAt)/1000))}</span>}</div>
+   <div className="topbar-copy"><div className="topbar-title-row"><BrandLockup compact/><h1>{pageTitle}</h1></div><span className={`sync-inline ${syncStatus}`} aria-live="polite"><i aria-hidden="true"/> {syncLabel}</span>{active&&tab!=="train"&&<span className="workout-live">Trening trwa · {fmtDuration(Math.floor((now-active.startedAt)/1000))}</span>}</div>
    {active&&tab==="train"&&<div className="topbar-actions"><button className="timer-shortcut" onClick={openWorkoutTimer}>{active.rest?"PRZERWA":"TIMER"}</button><button className="finish-button" onClick={()=>void finishWorkout()}>Zakończ</button></div>}
    {active&&tab!=="train"&&<button className="return-to-workout" onClick={()=>setTab("train")}>Do treningu</button>}
   </header>
   {localSaveError&&<div className="local-save-error" role="alert">Nie udało się zapisać zmian lokalnie. Sprawdź dostępne miejsce i ponów działanie.</div>}
   {updateNotice&&<div className="update-notice" role="status"><span>{updateNotice.message}</span>{updateNotice.canReload&&<button onClick={()=>void activateUpdate()}>ODŚWIEŻ</button>}</div>}
   <main>
-   <Suspense fallback={<section className="section"><p className="muted">Otwieranie ekranu…</p></section>}>
+   <Suspense fallback={<section className="section screen-loading" aria-label="Wczytywanie ekranu"><div className="screen-skeleton" aria-hidden="true"><i/><i/><i/></div></section>}>
    {tab==="train"&&(active?<ActiveView active={active} displayName={displayName} now={now} settings={settings} catalog={exerciseCatalog(templates)} previousSets={name=>previousSets(workouts,name)} previousExercise={exercise=>previousExerciseForWorkout(active,workouts,exercise)} setField={updateSetField} copyPrevious={usePreviousResult} completeSet={completeSet} addSet={addSet} addWarmup={addWarmup} removeSet={removeSet} changeSetType={changeSetType} updateExerciseNote={updateExerciseNote} updateNextSessionNote={updateNextSessionNote} dismissPreviousNote={dismissPreviousNote} togglePlateTools={togglePlateTools} skipExercise={skipExercise} resumeExercise={resumeExercise} moveExercise={moveExercise} swapExercise={swapExercise} selectExercise={selectExercise} navigateExercise={navigateExercise} discard={discardWorkout} openTimer={openWorkoutTimer}/>:<TrainHome displayName={displayName} templates={templates} workouts={workouts} active={active} onStart={startWorkout} onContinue={()=>setTab("train")}/>)}
    {tab==="plan"&&<PlanScreen settings={settings} templates={templates} workouts={workouts} active={active} onSave={saveTemplate} onCreate={createTemplate} onDelete={deleteTemplate} onStart={startWorkout} onContinue={()=>setTab("train")} notify={notify}/>}
    {tab==="history"&&<HistoryScreen workouts={workouts} body={body} catalog={exerciseCatalog(templates)} userId={userId} syncStatus={syncStatus} onSave={saveHistory} onSaveReview={saveWorkoutReview} onDelete={deleteHistory} onRetry={onSyncNow} notify={notify}/>}
@@ -425,8 +425,14 @@ export default function App({userId,accountEmail,displayName,syncStatus,onSyncNo
   <nav className="bottom-nav" aria-label="Nawigacja główna">{([["train","Trening","train"],["plan","Plan","plan"],["history","Historia","history"],["progress","Progres","progress"],["more","Więcej","more"]] as [Tab,string,AppIconName][]).map(([key,label,icon])=><button key={key} className={tab===key?"active":""} aria-label={label} aria-current={tab===key?"page":undefined} onClick={()=>setTab(key)}><AppIcon name={icon}/><small>{label}</small></button>)}</nav>
   {manualTimerOpen&&<ManualTimer onClose={()=>setManualTimerOpen(false)} onStart={startManualTimer}/>}
   {timerOpen&&active?.rest&&timerKey&&<Suspense fallback={<div className="timer-loading">Otwieranie timera…</div>}><TimerScreen key={timerKey} rest={active.rest} remaining={restRemaining} now={now} active={active} onClose={()=>setDismissedRestKey(timerKey)} onAdjust={adjustRest} onPause={pauseRest} onSkip={skipRest}/></Suspense>}
-  {toast&&<div className="toast" role="status"><span>{toast.message}</span>{toast.undo&&<button onClick={toast.undo}>COFNIJ</button>}</div>}
+  {toast&&<div className={`toast${toast.message.startsWith("NOWY PR")?" toast-pr-card":""}`} role="status"><ToastContent message={toast.message}/>{toast.undo&&<button onClick={toast.undo}>COFNIJ</button>}</div>}
  </div>;
+}
+
+function ToastContent({message}:{message:string}){
+ const pr=message.match(/^NOWY PR · (.*) · (\d+(?:[.,]\d+)? × \d+) · (e1RM .+)$/);
+ if(!pr)return <span>{message}</span>;
+ return <span className="toast-pr-content"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 17 10 11l4 4 6-8M14 7h6v6"/></svg><span><b>NOWY PR</b><strong>{pr[1]}</strong><span>{pr[2]} <small>{pr[3]}</small></span></span></span>;
 }
 
 function TrainHome({displayName,templates,workouts,active,onStart,onContinue}:{displayName:string;templates:WorkoutTemplate[];workouts:WorkoutHistory[];active:ActiveWorkout|null;onStart:(template:WorkoutTemplate)=>void;onContinue:()=>void}){

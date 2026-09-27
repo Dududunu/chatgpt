@@ -27,7 +27,7 @@ export function MoreScreen({settings,body,accountEmail,displayName,syncStatus,on
  const [deleteOpen,setDeleteOpen]=useState(false);
  const [deleteText,setDeleteText]=useState("");
  const [deleteBusy,setDeleteBusy]=useState(false);
- if(!settings)return <section className="section"><p className="muted">Wczytywanie ustawień…</p></section>;
+ if(!settings)return <section className="section screen-loading" aria-label="Wczytywanie ustawień"><div className="screen-skeleton" aria-hidden="true"><i/><i/><i/></div></section>;
  async function update(patch:Partial<Settings>){await onSaveSettings(patch)}
  async function saveName(event:React.FormEvent){
   event.preventDefault();const validation=validateDisplayName(nameDraft);if(validation){notify(validation);return}

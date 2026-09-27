@@ -19,7 +19,7 @@ export function TimerScreen({rest,remaining,now,active,onClose,onAdjust,onPause,
  const completedName=rest.completedExerciseName??rest.exerciseName;
  const completedSetNo=rest.completedSetNo??Math.max(1,rest.nextSet-1);
  const completedSetTotal=rest.completedSetTotal??exercise?.target.sets;
- return <div className="timer-overlay timer-fullscreen" role="dialog" aria-modal="true" aria-labelledby="timer-title">
+ return <div className={`timer-overlay timer-fullscreen${ended?" timer-finished":""}`} role="dialog" aria-modal="true" aria-labelledby="timer-title">
   <section className="timer-screen">
    <header className="timer-screen-header"><div><span className="eyebrow">{active?.name??"GYM"}</span><h1>Przerwa</h1></div><button className="timer-back" onClick={onClose}>Wróć do treningu</button></header>
    <div className="timer-ring" role="timer" aria-label={`Pozostało ${clock(remaining)}`} aria-live={ended?"assertive":"off"}>
