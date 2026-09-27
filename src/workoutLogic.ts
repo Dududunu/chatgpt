@@ -194,10 +194,17 @@ export function nextExerciseAfterCompletedSet(workout:ActiveWorkout,exerciseInde
 export function adjustRestTimer(rest:RestState,deltaSeconds:number,now:number):RestState{
  if(rest.pausedRemaining===undefined&&rest.endsAt<=now)return rest;
  const adjusted={...rest};
- if(adjusted.pausedRemaining!==undefined){
-  adjusted.pausedRemaining=Math.max(0,adjusted.pausedRemaining+deltaSeconds*1000);
+ const savedDuration=rest.durationMs;
+ const duration=typeof savedDuration==="number"&&Number.isFinite(savedDuration)&&savedDuration>=0?savedDuration:Math.max(1,rest.endsAt-rest.startedAt);
+ const pausedRemaining=adjusted.pausedRemaining;
+ if(pausedRemaining!==undefined){
+  const remaining=Math.max(0,pausedRemaining+deltaSeconds*1000);
+  adjusted.pausedRemaining=remaining;
+  adjusted.durationMs=Math.max(1,duration+remaining-pausedRemaining);
  }else{
-  adjusted.endsAt=Math.max(now,adjusted.endsAt+deltaSeconds*1000);
+  const end=Math.max(now,adjusted.endsAt+deltaSeconds*1000);
+  adjusted.endsAt=end;
+  adjusted.durationMs=Math.max(1,duration+end-rest.endsAt);
  }
  delete adjusted.notifiedAt;
  return adjusted;
@@ -206,6 +213,8 @@ export function adjustRestTimer(rest:RestState,deltaSeconds:number,now:number):R
 export function toggleRestPause(rest:RestState,now:number):RestState{
  if(rest.pausedRemaining===undefined&&rest.endsAt<=now)return rest;
  const toggled={...rest};
+ const savedDuration=rest.durationMs;
+ toggled.durationMs=typeof savedDuration==="number"&&Number.isFinite(savedDuration)&&savedDuration>=0?savedDuration:Math.max(1,rest.endsAt-rest.startedAt);
  if(toggled.pausedRemaining!==undefined){
   if(toggled.pausedRemaining===0){
    toggled.endsAt=now;

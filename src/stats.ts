@@ -16,18 +16,22 @@ export const volume=(w:WorkoutHistory)=>w.exercises.reduce((total,exercise)=>
   return Number.isFinite(setVolume)&&Number.isFinite(sum+setVolume)?sum+setVolume:sum;
  },0),0);
 
-export function bestE1rm(workouts:WorkoutHistory[],exerciseName:string){
- let best=0;
+export function bestE1rmOrNull(workouts:WorkoutHistory[],exerciseName:string):number|null{
+ let best:number|null=null;
  for(const w of workouts) for(const e of w.exercises) if(e.name===exerciseName&&e.status!=="skipped")
   for(const s of e.sets){
    if(!s.completedAt || !isPrCandidate(s,e.target.timed)) continue;
    const weight=toFiniteNumber(s.weight),reps=toFiniteNumber(s.reps);
    if(weight!==null&&reps!==null&&weight>=0&&reps>0&&Number.isInteger(reps)){
     const estimate=e1rm(weight,reps);
-    if(Number.isFinite(estimate)) best=Math.max(best,estimate);
+    if(Number.isFinite(estimate)) best=best===null?estimate:Math.max(best,estimate);
    }
   }
  return best;
+}
+
+export function bestE1rm(workouts:WorkoutHistory[],exerciseName:string){
+ return bestE1rmOrNull(workouts,exerciseName)??0;
 }
 
 export function actual1rm(workouts:WorkoutHistory[],exerciseName:string){
@@ -50,20 +54,20 @@ export function recentPrCount(workouts:WorkoutHistory[],since=Date.now()-30*864e
   for(const exercise of workout.exercises){
    if(exercise.status==="skipped")continue;
    if(exercise.target.timed)continue;
-   let best=0;
+   let best=0,hasCandidate=false;
    for(const set of exercise.sets){
     if(!set.completedAt||!isPrCandidate(set,exercise.target.timed))continue;
     const weight=toFiniteNumber(set.weight),reps=toFiniteNumber(set.reps);
     if(weight===null||reps===null||weight<0||reps<=0||!Number.isInteger(reps))continue;
     const estimate=e1rm(weight,reps);
-    if(Number.isFinite(estimate))best=Math.max(best,estimate);
+    if(Number.isFinite(estimate)){best=Math.max(best,estimate);hasCandidate=true}
    }
-   if(best>0)sessionBest.set(exercise.name,Math.max(sessionBest.get(exercise.name)??0,best));
+   if(hasCandidate)sessionBest.set(exercise.name,Math.max(sessionBest.get(exercise.name)??0,best));
   }
   for(const [name,best] of sessionBest){
-   const previous=records.get(name)??0;
-   if(best>previous&&workout.startedAt>=since)count++;
-   records.set(name,Math.max(previous,best));
+   const previous=records.get(name);
+   if(previous!==undefined&&best>previous&&workout.startedAt>=since)count++;
+   records.set(name,Math.max(previous??0,best));
   }
  }
  return count;

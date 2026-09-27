@@ -64,6 +64,8 @@ export type RestState={
  completedSetTotal?:number;
  startedAt:number;
  endsAt:number;
+ /** Timer length excluding pauses; used to keep ring progress stable on resume. */
+ durationMs?:number;
  kind?:"rest"|"manual";
  pausedRemaining?:number;
  notifiedAt?:number;

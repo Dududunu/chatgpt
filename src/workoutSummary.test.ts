@@ -1,6 +1,7 @@
 import { describe,expect,it } from "vitest";
 import type { WorkoutHistory } from "./types";
 import { bestSetsInWorkout,newPersonalRecords,previousTemplateWorkout,summarizeWorkout } from "./workoutSummary";
+import { recentPrCount } from "./stats";
 
 function session(id:string,startedAt:number,weight:number,reps:number):WorkoutHistory{
  return {id,templateId:"upper",name:"Upper",startedAt,endedAt:startedAt+3_600_000,exercises:[{templateExerciseId:"bench",name:"Bench",target:{id:"bench",name:"Bench",sets:1,repMin:6,repMax:8,rir:"2",tempo:"2110",restSec:120},sets:[{id:`${id}-1`,setNo:1,weight,reps,rir:2,completedAt:startedAt+100}]}]};
@@ -16,6 +17,14 @@ describe("finished workout summary",()=>{
   const first=session("first",100,70,8),better=session("better",200,75,8);
   expect(newPersonalRecords(first,[])).toEqual([]);
   expect(newPersonalRecords(better,[first])).toHaveLength(1);
+ });
+ it("keeps the progress PR count consistent with the workout summary baseline",()=>{
+  const first=session("first",100,70,8);
+  expect(recentPrCount([first],0)).toBe(summarizeWorkout(first,[]).prCount);
+ });
+ it("recognizes improvement from a valid zero-load baseline",()=>{
+  const baseline=session("baseline",100,0,8),better=session("better",200,10,8);
+  expect(newPersonalRecords(better,[baseline])).toHaveLength(1);
  });
  it("does not report warm-up sets as PRs or training volume",()=>{
   const workout=session("warm",200,90,8);workout.exercises[0].sets[0].type="warmup";

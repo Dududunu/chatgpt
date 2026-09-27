@@ -13,10 +13,12 @@ export function remainingRestMs(rest:RestState,now:number):number{
 }
 
 export function restProgress(rest:RestState,now:number):number{
- const total=Math.max(1,rest.endsAt-rest.startedAt);
+ const savedDuration=rest.durationMs;
+ const total=typeof savedDuration==="number"&&Number.isFinite(savedDuration)&&savedDuration>=0?Math.max(1,savedDuration):Math.max(1,rest.endsAt-rest.startedAt);
  return Math.min(1,Math.max(0,1-remainingRestMs(rest,now)/total));
 }
 
 export function createManualRest(seconds:number,now:number):RestState{
- return {kind:"manual",exerciseName:"Timer ręczny",nextSet:0,startedAt:now,endsAt:now+seconds*1000};
+ const durationMs=Math.max(0,seconds*1000);
+ return {kind:"manual",exerciseName:"Timer ręczny",nextSet:0,startedAt:now,endsAt:now+durationMs,durationMs};
 }

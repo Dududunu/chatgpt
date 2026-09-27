@@ -33,6 +33,7 @@ describe("fullscreen rest timer recovery",()=>{
   expect(shorter.pausedRemaining).toBe(60_000);
   const longer=adjustRestTimer(shorter,30,45_000);
   expect(longer.pausedRemaining).toBe(90_000);
+  expect(restProgress(longer,45_000)).toBeCloseTo(restProgress(paused,40_000));
   const resumed=toggleRestPause(longer,60_000);
   expect(remainingRestMs(resumed,70_000)).toBe(80_000);
  });
@@ -45,6 +46,14 @@ describe("fullscreen rest timer recovery",()=>{
   expect(remainingRestMs(restored.rest!,250_000)).toBe(90_000);
  });
 
+ it("keeps ring progress steady when a timer is resumed after a long pause",()=>{
+  const paused=toggleRestPause(rest,40_000);
+  const progressAtPause=restProgress(paused,40_000);
+  const resumed=toggleRestPause(paused,1_000_000);
+  expect(remainingRestMs(resumed,1_000_000)).toBe(90_000);
+  expect(restProgress(resumed,1_000_000)).toBeCloseTo(progressAtPause);
+ });
+
  it("does not restart notifications by changing a timer after it has ended",()=>{
   const finished={...rest,notifiedAt:130_000};
   expect(adjustRestTimer(finished,-30,140_000)).toEqual(finished);
@@ -53,7 +62,7 @@ describe("fullscreen rest timer recovery",()=>{
 
  it("creates a manual timer that uses the same persisted fullscreen flow",()=>{
   const manual=createManualRest(150,20_000);
-  expect(manual).toEqual({kind:"manual",exerciseName:"Timer ręczny",nextSet:0,startedAt:20_000,endsAt:170_000});
+  expect(manual).toEqual({kind:"manual",exerciseName:"Timer ręczny",nextSet:0,startedAt:20_000,endsAt:170_000,durationMs:150_000});
   expect(shouldShowFullscreenTimer(workout.id,manual,null)).toBe(true);
  });
 });

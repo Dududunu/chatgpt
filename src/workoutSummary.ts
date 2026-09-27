@@ -1,5 +1,5 @@
 import type { ExerciseLog,WorkoutHistory } from "./types";
-import { actual1rm,bestE1rm,e1rm,isPrCandidate,volume } from "./stats";
+import { actual1rm,bestE1rm,bestE1rmOrNull,e1rm,isPrCandidate,volume } from "./stats";
 import { toFiniteNumber } from "./workoutLogic";
 
 export type PersonalRecord={exerciseName:string;weight:number;reps:number;e1rm:number};
@@ -29,8 +29,8 @@ export function newPersonalRecords(workout:WorkoutHistory,history:WorkoutHistory
   if(exercise.status==="skipped")continue;
   const candidate=eligibleBest(exercise);
   if(!candidate)continue;
-  const previous=bestE1rm(prior,candidate.exerciseName);
-  if(previous>0&&candidate.e1rm>previous){
+  const previous=bestE1rmOrNull(prior,candidate.exerciseName);
+  if(previous!==null&&candidate.e1rm>previous){
    const saved=records.get(candidate.exerciseName);
    if(!saved||candidate.e1rm>saved.e1rm)records.set(candidate.exerciseName,candidate);
   }

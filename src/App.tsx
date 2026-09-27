@@ -221,7 +221,7 @@ export default function App({userId,accountEmail,displayName,syncStatus,onSyncNo
     if(settings?.autoRest!==false&&restTarget){
      const startedAt=Date.now(),endsAt=startedAt+exercise.target.restSec*1000;
      set.restStartedAt=startedAt;set.restEndsAt=endsAt;
-     workout.rest={kind:"rest",exerciseName:restTarget.exerciseName,nextExerciseId:restTarget.exerciseId,nextSet:restTarget.setNo,completedExerciseName:exercise.name,completedSetNo:set.setNo,completedSetTotal:exercise.target.sets,startedAt,endsAt};
+     workout.rest={kind:"rest",exerciseName:restTarget.exerciseName,nextExerciseId:restTarget.exerciseId,nextSet:restTarget.setNo,completedExerciseName:exercise.name,completedSetNo:set.setNo,completedSetTotal:exercise.target.sets,startedAt,endsAt,durationMs:exercise.target.restSec*1000};
     }
     if(supersetNextId)workout.currentExerciseId=supersetNextId;
     return workout;

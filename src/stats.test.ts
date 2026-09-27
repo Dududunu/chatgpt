@@ -61,8 +61,20 @@ describe("strength statistics",()=>{
  });
 
  it("counts one PR per exercise per workout even when multiple sets improve",()=>{
-  const session=workout([set("80","5",10),set("85","5",11)]);session.startedAt=10_000;
-  expect(recentPrCount([session],0)).toBe(1);
+  const previous=workout([set("70","5",9)]);previous.id="previous";previous.startedAt=1_000;
+  const session=workout([set("80","5",10),set("85","5",11)]);session.id="session";session.startedAt=10_000;
+  expect(recentPrCount([session,previous],5_000)).toBe(1);
+ });
+
+ it("does not count the first recorded result as an improvement PR",()=>{
+  const first=workout([set("80","5",10)]);first.startedAt=10_000;
+  expect(recentPrCount([first],0)).toBe(0);
+ });
+
+ it("counts an improvement after a valid zero-load baseline",()=>{
+  const baseline=workout([set("0","5",10)]);baseline.id="baseline";baseline.startedAt=1_000;
+  const improved=workout([set("10","5",20)]);improved.id="improved";improved.startedAt=10_000;
+  expect(recentPrCount([baseline,improved],5_000)).toBe(1);
  });
 
  it("does not interpret timed sets as weight volume or e1RM",()=>{
