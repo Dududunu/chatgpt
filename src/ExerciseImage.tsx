@@ -14,9 +14,8 @@ export function ExerciseImage({exerciseId}:{exerciseId:string}){
  const technique=getExerciseTechnique(exerciseId)??[];
  return <div className="exerciseImageBlock">
   <img className="exerciseImage" src={spec.imagePath} alt={`Atlas ćwiczenia: ${spec.exerciseName}`} loading="lazy" decoding="async" onError={()=>setFailedImageId(exerciseId)}/>
-  <div className="exerciseImageMuscles" aria-label="Zaangażowane mięśnie">
-   <div className="exerciseImageMuscleRow"><span className="exerciseImageMuscleLabel">Główne</span>{spec.mainMuscles.map(muscle=><span className="muscleTag primaryMuscle" key={muscle}>{muscle}</span>)}</div>
-   {spec.secondaryMuscles.length>0&&<div className="exerciseImageMuscleRow"><span className="exerciseImageMuscleLabel">Dodatkowe</span>{spec.secondaryMuscles.map(muscle=><span className="muscleTag" key={muscle}>{muscle}</span>)}</div>}
+  <div className="exerciseImageMuscles" role="group" aria-label="Zaangażowane mięśnie">
+   <div className="exerciseImageMuscleRow"><span className="exerciseImageMuscleLabel">Mięśnie</span>{spec.mainMuscles.map(muscle=><span className="muscleTag primaryMuscle" key={`primary-${muscle}`}>{muscle}</span>)}{spec.secondaryMuscles.map(muscle=><span className="muscleTag secondaryMuscle" key={`secondary-${muscle}`}>{muscle}</span>)}</div>
   </div>
   {technique.length>0&&<details className="technique"><summary>Technika</summary><ul>{technique.map(point=><li key={point}>{point}</li>)}</ul></details>}
  </div>;

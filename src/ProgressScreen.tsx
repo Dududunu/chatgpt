@@ -50,20 +50,19 @@ export function ProgressScreen({workouts,body}:{workouts:WorkoutHistory[];body:B
  }).filter((item):item is {name:string;value:number;change:number}=>Boolean(item)).sort((a,b)=>b.value-a.value).slice(0,4);
  const label=mode==="body"?"Masa ciała (kg)":mode==="volume"?"Objętość treningu (kg)":mode==="best"?`${activeName||"Ćwiczenie"} · najlepszy ciężar (kg)`: `${activeName||"Ćwiczenie"} · e1RM (kg)`;
  return <section className="section progress-screen">
-  <div className="section-heading"><div><h2>Progres</h2><p>Wyniki liczone z zapisanych serii.</p></div></div>
-  <div className="metric-strip progress-summary">
-   <div><small>TRENINGI · 30 DNI</small><b>{recent.length}</b></div>
-   <div><small>OBJĘTOŚĆ · 30 DNI</small><b>{Math.round(recent.reduce((sum,workout)=>sum+volume(workout),0)).toLocaleString("pl-PL")} kg</b></div>
-   <div><small>NOWE PR · 30 DNI</small><b>{prs}</b></div>
+  <div className="progress-summary-caption">Ostatnie 30 dni</div>
+  <div className="metric-strip progress-summary" role="group" aria-label="Podsumowanie z ostatnich 30 dni">
+   <div><small>Treningi</small><b>{recent.length}</b></div>
+   <div><small>Objętość</small><b>{Math.round(recent.reduce((sum,workout)=>sum+volume(workout),0)).toLocaleString("pl-PL")} kg</b></div>
+   <div><small>Nowe PR</small><b>{prs}</b></div>
   </div>
-  <div className="progress-quick-stats"><span>Masa ciała <b>{latestBody==null?"—":`${latestBody} kg`}</b></span><span>Bench · actual 1RM <b>{actual?`${actual} kg`:"—"}</b></span><span>Bench · e1RM <b>{estimated?`${estimated.toFixed(1)} kg`:"—"}</b></span></div>
+  <div className="progress-quick-stats"><span>Masa ciała <b>{latestBody==null?"—":`${latestBody} kg`}</b></span><span>Ławka · 1RM <b>{actual?`${actual} kg`:"—"}</b></span><span>Ławka · e1RM <b>{estimated?`${estimated.toFixed(1)} kg`:"—"}</b></span></div>
   {highlights.length>0&&<section className="exercise-highlights"><div className="chart-title"><h3>Najważniejsze ćwiczenia</h3></div>{highlights.map(item=><div className="exercise-highlight" key={item.name}><span><b>{item.name}</b><small>e1RM · od pierwszego zapisu</small></span><span><b>{item.value.toFixed(1)} kg</b><small className={item.change>0?"positive-change":""}>{item.change>0?"+":""}{item.change.toFixed(1)} kg</small></span></div>)}</section>}
-  {!workouts.length&&!body.length&&<p className="empty-state">Po kilku treningach pokażemy tutaj Twój progres.</p>}
   <div className="chart-section">
-   <div className="chart-title"><h3>{label}</h3><span>{chartData.length} punktów</span></div>
+   <div className="chart-title progress-chart-title"><h3>{label}</h3><span>{chartData.length} punktów</span></div>
    <div className="chart-controls">
-    <div className="segmented" aria-label="Rodzaj wykresu"><button className={mode==="e1rm"?"selected":""} onClick={()=>setMode("e1rm")}>e1RM</button><button className={mode==="best"?"selected":""} onClick={()=>setMode("best")}>Ciężar</button><button className={mode==="volume"?"selected":""} onClick={()=>setMode("volume")}>Objętość</button><button className={mode==="body"?"selected":""} onClick={()=>setMode("body")}>Masa</button></div>
-    {(mode==="e1rm"||mode==="best")&&names.length>0&&<select aria-label="Ćwiczenie na wykresie" value={activeName} onChange={event=>setExerciseName(event.target.value)}>{names.map(name=><option key={name}>{name}</option>)}</select>}
+    <div className="segmented chart-modes" role="group" aria-label="Rodzaj wykresu"><button className={mode==="e1rm"?"selected":""} onClick={()=>setMode("e1rm")}>e1RM</button><button className={mode==="best"?"selected":""} onClick={()=>setMode("best")}>Ciężar</button><button className={mode==="volume"?"selected":""} onClick={()=>setMode("volume")}>Objętość</button><button className={mode==="body"?"selected":""} onClick={()=>setMode("body")}>Masa</button></div>
+    {(mode==="e1rm"||mode==="best")&&names.length>0&&<select className="exercise-chart-select" aria-label="Ćwiczenie na wykresie" value={activeName} onChange={event=>setExerciseName(event.target.value)}>{names.map(name=><option key={name}>{name}</option>)}</select>}
    </div>
    <div className="range-select">{ranges.map(item=><button className={range===item?"selected":""} key={item} onClick={()=>setRange(item)}>{item}</button>)}</div>
    {chartData.length>0?<div className="chart-frame"><ResponsiveContainer width="100%" height={210}><LineChart data={chartData} margin={{top:10,right:14,bottom:2,left:-14}}>

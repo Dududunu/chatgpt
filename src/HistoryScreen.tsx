@@ -45,7 +45,7 @@ export function HistoryScreen({workouts,body,catalog,userId,syncStatus,onSave,on
  const cells=calendarMonthCells(month,workouts,body);
  const monthLabel=new Intl.DateTimeFormat("pl-PL",{month:"long",year:"numeric"}).format(month);
  return <section className="section history-screen">
-  <div className="section-heading"><div><h2>Historia</h2><p>Każdy trening zachowuje własny snapshot planu.</p></div></div>
+  <div className="section-heading"><div><h2>Twoje treningi</h2><p>Zapisane treningi i pomiary masy.</p></div></div>
   <div className="history-view-toggle" role="group" aria-label="Widok historii"><button className={view==="list"?"selected":""} aria-pressed={view==="list"} onClick={()=>setView("list")}>Lista</button><button className={view==="calendar"?"selected":""} aria-pressed={view==="calendar"} onClick={()=>setView("calendar")}>Kalendarz</button></div>
   {!workouts.length&&!body.length?<p className="empty-state">Nie masz jeszcze treningów. Zakończony trening pojawi się tutaj.</p>:view==="calendar"?<div className="history-calendar">
    <div className="calendar-header"><button className="quiet-button" aria-label="Poprzedni miesiąc" onClick={()=>setMonth(current=>moveCalendarMonth(current,-1))}>←</button><h3>{capitalize(monthLabel)}</h3><button className="quiet-button" aria-label="Następny miesiąc" onClick={()=>setMonth(current=>moveCalendarMonth(current,1))}>→</button><button className="calendar-today" onClick={()=>{const now=new Date();setMonth(new Date(now.getFullYear(),now.getMonth(),1));setSelectedDay(localDateKey(now.getTime()))}}>Dzisiaj</button></div>

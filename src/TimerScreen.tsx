@@ -21,7 +21,7 @@ export function TimerScreen({rest,remaining,now,active,onClose,onAdjust,onPause,
  const completedSetTotal=rest.completedSetTotal??exercise?.target.sets;
  return <div className={`timer-overlay timer-fullscreen${ended?" timer-finished":""}`} role="dialog" aria-modal="true" aria-labelledby="timer-title">
   <section className="timer-screen">
-   <header className="timer-screen-header"><div><span className="eyebrow">{active?.name??"GYM"}</span><h1>Przerwa</h1></div><button className="timer-back" onClick={onClose}>Wróć do treningu</button></header>
+   <header className="timer-screen-header"><div><span className="eyebrow">{active?.name??"GYM"}</span><h1>Przerwa</h1></div><button className="timer-back" aria-label="Wróć do treningu" onClick={onClose}>← Trening</button></header>
    <div className="timer-ring" role="timer" aria-label={`Pozostało ${clock(remaining)}`} aria-live={ended?"assertive":"off"}>
     <svg viewBox="0 0 240 240" aria-hidden="true"><circle className="timer-ring-track" cx="120" cy="120" r="104"/><circle className="timer-ring-progress" cx="120" cy="120" r="104" style={{strokeDasharray:circumference,strokeDashoffset:offset}}/></svg>
     <div className="timer-display"><span className="timer-status" id="timer-title">{ended?"PRZERWA ZAKOŃCZONA":paused?"PAUZA":"ODPOCZYNEK"}</span><strong>{clock(remaining)}</strong><span>{rest.kind==="manual"?"Timer ręczny":rest.exerciseName}</span></div>
