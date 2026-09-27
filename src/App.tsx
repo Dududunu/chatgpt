@@ -3,7 +3,7 @@ import { db } from "./db";
 import type { ActiveWorkout, BodyEntry, ExerciseLog, ExerciseTemplate, RestState, SetLog, Settings, SetType, WorkoutHistory, WorkoutTemplate } from "./types";
 import { actual1rm, bestE1rm, e1rm, isPrCandidate, volume } from "./stats";
 import { addWorkoutSet, adjustRestTimer, currentExerciseIndex, exerciseLogId, exerciseNavigationStatus, firstIncompleteSetIndex, isRestNotificationDue, moveWorkoutExerciseToEnd, navigateWorkoutExercise, nextExerciseAfterCompletedSet, nextRestTarget, normalizeSetForCompletion, removeWorkoutSet, restoreActiveWorkout, restoreWorkoutExercise, selectWorkoutExercise, setWorkoutSetType, skipWorkoutExercise, swapWorkoutExercise, toFiniteNumber, toggleRestPause } from "./workoutLogic";
-import { createWorkoutSnapshot,prefillPreviousWeights,replaceTemplateExercise } from "./planLogic";
+import { createWorkoutSnapshot,inheritNextSessionNotes,prefillPreviousWeights,replaceTemplateExercise } from "./planLogic";
 import { defaultTemplates } from "./seed";
 import { calculatePlates, generateWarmupSets, isBarbellExercise } from "./barbellTools";
 import { ExerciseImage } from "./ExerciseImage";
@@ -172,12 +172,7 @@ export default function App({userId,accountEmail,displayName,syncStatus,onSyncNo
    const startedAt=Date.now();
    const previous=workouts.find(item=>item.templateId===template.id&&item.startedAt<startedAt);
    const snapshot=prefillPreviousWeights(createWorkoutSnapshot(template,startedAt,uid),previous,settings?.prefillPreviousWeight===true);
-   if(previous)snapshot.exercises=snapshot.exercises.map(exercise=>{
-    const prior=previous.exercises.find(item=>item.status!=="skipped"&&item.status!=="replaced"&&item.templateExerciseId===exercise.templateExerciseId)||previous.exercises.find(item=>item.status!=="skipped"&&item.status!=="replaced"&&item.name===exercise.name);
-    if(prior?.previousNoteDismissed)return {...exercise,previousNoteDismissed:true};
-    return prior?.nextSessionNote?.trim()?{...exercise,previousSessionNote:prior.nextSessionNote.trim()}:exercise;
-   });
-   const workout=snapshot;
+   const workout=inheritNextSessionNotes(snapshot,previous);
    await db.active.put(workout);setActive(workout);setTab("train");
   }catch{setLocalSaveError(true);showToast("Nie udało się zapisać zmian lokalnie.")}finally{startingRef.current=false}
  }

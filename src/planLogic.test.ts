@@ -1,5 +1,5 @@
 import { describe,expect,it } from "vitest";
-import { addTemplateExercise,createWorkoutSnapshot,createWorkoutTemplate,duplicateWorkoutTemplate,moveTemplateExercise,prefillPreviousWeights,removeTemplateExercise,replaceTemplateExercise,updateTemplateExercise,validateWorkoutTemplate } from "./planLogic";
+import { addTemplateExercise,createWorkoutSnapshot,createWorkoutTemplate,duplicateWorkoutTemplate,inheritNextSessionNotes,moveTemplateExercise,prefillPreviousWeights,removeTemplateExercise,replaceTemplateExercise,updateTemplateExercise,validateWorkoutTemplate } from "./planLogic";
 import type { ExerciseTemplate,WorkoutTemplate } from "./types";
 
 const exercise=(id:string,name=id):ExerciseTemplate=>({id,name,sets:2,repMin:6,repMax:8,rir:"2",tempo:"2110",restSec:120});
@@ -66,5 +66,25 @@ describe("editable plans",()=>{
    {templateExerciseId:"press",name:"Wyciskanie hantli",target:exercise("press","Wyciskanie hantli"),sets:[{id:"newer",setNo:1,weight:30,reps:10,rir:2,completedAt:130}]}
   ]};
   expect(prefillPreviousWeights(current,previous,true).exercises[0].sets[0].weight).toBe(30);
+ });
+
+ it("shows a fresh next-session note even after the previous note was dismissed",()=>{
+  const current=createWorkoutSnapshot({...template,exercises:[exercise("press","press")]},200,()=>"new");
+  const previous={id:"old",templateId:"upper",name:"UPPER 1",startedAt:100,endedAt:150,exercises:[{
+   templateExerciseId:"press",name:"press",target:exercise("press","press"),previousNoteDismissed:true,nextSessionNote:"  Spróbuj 32,5 kg  ",sets:[]
+  }]};
+  const inherited=inheritNextSessionNotes(current,previous).exercises[0];
+  expect(inherited.previousSessionNote).toBe("Spróbuj 32,5 kg");
+  expect(inherited.previousNoteDismissed).toBe(false);
+ });
+
+ it("keeps a dismissed note hidden when no replacement note was added",()=>{
+  const current=createWorkoutSnapshot({...template,exercises:[exercise("press","press")]},200,()=>"new");
+  const previous={id:"old",templateId:"upper",name:"UPPER 1",startedAt:100,endedAt:150,exercises:[{
+   templateExerciseId:"press",name:"press",target:exercise("press","press"),previousNoteDismissed:true,previousSessionNote:"Old note",sets:[]
+  }]};
+  const inherited=inheritNextSessionNotes(current,previous).exercises[0];
+  expect(inherited.previousSessionNote).toBeUndefined();
+  expect(inherited.previousNoteDismissed).toBe(true);
  });
 });

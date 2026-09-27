@@ -37,6 +37,17 @@ export function prefillPreviousWeights(workout:ActiveWorkout,previous:WorkoutHis
  })};
 }
 
+export function inheritNextSessionNotes(workout:ActiveWorkout,previous:WorkoutHistory|undefined):ActiveWorkout{
+ if(!previous)return workout;
+ return {...workout,exercises:workout.exercises.map(exercise=>{
+  const prior=previous.exercises.find(item=>item.status!=="skipped"&&item.status!=="replaced"&&item.templateExerciseId===exercise.templateExerciseId)||previous.exercises.find(item=>item.status!=="skipped"&&item.status!=="replaced"&&item.name===exercise.name);
+  if(!prior)return exercise;
+  const note=prior.nextSessionNote?.trim();
+  if(note)return {...exercise,previousSessionNote:note,previousNoteDismissed:false};
+  return prior.previousNoteDismissed?{...exercise,previousNoteDismissed:true}:exercise;
+ })};
+}
+
 export function createWorkoutTemplate(name:string,id:string,createdAt=Date.now()):WorkoutTemplate{
  return {id,name:name.trim(),exercises:[],createdAt};
 }
