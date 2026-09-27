@@ -9,7 +9,7 @@ export function isPrCandidate(set:Pick<SetLog,"type">,timed?:boolean):boolean{
 
 export const volume=(w:WorkoutHistory)=>w.exercises.reduce((total,exercise)=>
  total+exercise.sets.reduce((sum,set)=>{
-  if(!set.completedAt || exercise.target.timed || set.type==="warmup") return sum;
+  if(exercise.status==="skipped"||!set.completedAt || exercise.target.timed || set.type==="warmup") return sum;
   const weight=toFiniteNumber(set.weight),reps=toFiniteNumber(set.reps);
   if(weight===null || reps===null || weight<0 || reps<=0 || !Number.isInteger(reps)) return sum;
   const setVolume=weight*reps;
@@ -18,7 +18,7 @@ export const volume=(w:WorkoutHistory)=>w.exercises.reduce((total,exercise)=>
 
 export function bestE1rm(workouts:WorkoutHistory[],exerciseName:string){
  let best=0;
- for(const w of workouts) for(const e of w.exercises) if(e.name===exerciseName)
+ for(const w of workouts) for(const e of w.exercises) if(e.name===exerciseName&&e.status!=="skipped")
   for(const s of e.sets){
    if(!s.completedAt || !isPrCandidate(s,e.target.timed)) continue;
    const weight=toFiniteNumber(s.weight),reps=toFiniteNumber(s.reps);
@@ -32,7 +32,7 @@ export function bestE1rm(workouts:WorkoutHistory[],exerciseName:string){
 
 export function actual1rm(workouts:WorkoutHistory[],exerciseName:string){
  let best=0;
- for(const w of workouts) for(const e of w.exercises) if(e.name===exerciseName)
+ for(const w of workouts) for(const e of w.exercises) if(e.name===exerciseName&&e.status!=="skipped")
   for(const s of e.sets){
    if(!s.completedAt || !isPrCandidate(s,e.target.timed)) continue;
    const weight=toFiniteNumber(s.weight),reps=toFiniteNumber(s.reps);
@@ -48,6 +48,7 @@ export function recentPrCount(workouts:WorkoutHistory[],since=Date.now()-30*864e
  for(const workout of ordered){
   const sessionBest=new Map<string,number>();
   for(const exercise of workout.exercises){
+   if(exercise.status==="skipped")continue;
    if(exercise.target.timed)continue;
    let best=0;
    for(const set of exercise.sets){

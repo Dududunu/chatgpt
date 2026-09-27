@@ -6,6 +6,7 @@ export type PersonalRecord={exerciseName:string;weight:number;reps:number;e1rm:n
 export type WorkoutSummary={durationSeconds:number;completedSets:number;volume:number;previous:WorkoutHistory|null;volumeChange:number|null;durationChange:number|null;prCount:number;records:PersonalRecord[];bestSets:PersonalRecord[]};
 
 function eligibleBest(exercise:ExerciseLog):PersonalRecord|null{
+ if(exercise.status==="skipped")return null;
  let best:PersonalRecord|null=null;
  for(const set of exercise.sets){
   if(!set.completedAt||!isPrCandidate(set,exercise.target.timed))continue;
@@ -25,6 +26,7 @@ export function newPersonalRecords(workout:WorkoutHistory,history:WorkoutHistory
  const prior=history.filter(item=>item.id!==workout.id&&item.startedAt<workout.startedAt);
  const records=new Map<string,PersonalRecord>();
  for(const exercise of workout.exercises){
+  if(exercise.status==="skipped")continue;
   const candidate=eligibleBest(exercise);
   if(!candidate)continue;
   const previous=bestE1rm(prior,candidate.exerciseName);
@@ -39,6 +41,7 @@ export function newPersonalRecords(workout:WorkoutHistory,history:WorkoutHistory
 export function bestSetsInWorkout(workout:WorkoutHistory):PersonalRecord[]{
  const bestByExercise=new Map<string,PersonalRecord>();
  for(const exercise of workout.exercises){
+  if(exercise.status==="skipped")continue;
   const candidate=eligibleBest(exercise);if(!candidate)continue;
   const current=bestByExercise.get(candidate.exerciseName);
   if(!current||candidate.e1rm>current.e1rm)bestByExercise.set(candidate.exerciseName,candidate);
@@ -53,7 +56,7 @@ export function summarizeWorkout(workout:WorkoutHistory,history:WorkoutHistory[]
  const totalVolume=volume(workout),previousVolume=previous?volume(previous):null;
  return {
   durationSeconds,
-  completedSets:workout.exercises.reduce((count,exercise)=>count+exercise.sets.filter(set=>set.completedAt).length,0),
+  completedSets:workout.exercises.filter(exercise=>exercise.status!=="skipped").reduce((count,exercise)=>count+exercise.sets.filter(set=>set.completedAt&&set.type!=="warmup").length,0),
   volume:totalVolume,
   previous,
   volumeChange:previousVolume===null?null:totalVolume-previousVolume,

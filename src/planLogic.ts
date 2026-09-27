@@ -25,9 +25,9 @@ export function createWorkoutSnapshot(template:WorkoutTemplate,startedAt:number,
 export function prefillPreviousWeights(workout:ActiveWorkout,previous:WorkoutHistory|undefined,enabled:boolean):ActiveWorkout{
  if(!enabled||!previous)return workout;
  return {...workout,exercises:workout.exercises.map(exercise=>{
-  const old=previous.exercises.find(item=>item.templateExerciseId===exercise.templateExerciseId)||previous.exercises.find(item=>item.name===exercise.name);
+  const old=previous.exercises.find(item=>item.status!=="skipped"&&item.status!=="replaced"&&item.templateExerciseId===exercise.templateExerciseId)||previous.exercises.find(item=>item.status!=="skipped"&&item.status!=="replaced"&&item.name===exercise.name);
   if(!old)return exercise;
-  const completed=old.sets.filter(set=>set.completedAt).sort((a,b)=>a.setNo-b.setNo);
+  const completed=old.sets.filter(set=>set.completedAt&&set.type!=="warmup").sort((a,b)=>a.setNo-b.setNo);
   if(!completed.length)return exercise;
   return {...exercise,sets:exercise.sets.map(set=>{
    const matching=completed.find(item=>item.setNo===set.setNo)||completed.at(-1)!;
@@ -54,6 +54,11 @@ export function updateTemplateExercise(template:WorkoutTemplate,exerciseId:strin
  return {...template,exercises:template.exercises.map(exercise=>
   exercise.id===exerciseId?{...exercise,...patch,id:exercise.id}:exercise
  )};
+}
+
+/** Applies a user-confirmed replacement while retaining the plan's stable exercise ID. */
+export function replaceTemplateExercise(template:WorkoutTemplate,exerciseId:string,target:ExerciseTemplate):WorkoutTemplate{
+ return {...template,exercises:template.exercises.map(exercise=>exercise.id===exerciseId?{...structuredClone(target),id:exercise.id}:exercise)};
 }
 
 export function removeTemplateExercise(template:WorkoutTemplate,exerciseId:string):WorkoutTemplate{

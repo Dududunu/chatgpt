@@ -1,5 +1,5 @@
 import { describe,expect,it } from "vitest";
-import { addWorkoutSet, adjustRestTimer, currentExerciseIndex, firstIncompleteSetIndex, isRestNotificationDue, navigateWorkoutExercise, nextExerciseAfterCompletedSet, nextRestTarget, normalizeSetForCompletion, removeWorkoutSet, restoreActiveWorkout, setWorkoutSetType, shouldStartRest, toFiniteNumber, toggleRestPause } from "./workoutLogic";
+import { addWorkoutSet, adjustRestTimer, currentExerciseIndex, exerciseLogId, exerciseNavigationStatus, firstIncompleteSetIndex, isRestNotificationDue, moveWorkoutExerciseToEnd, navigateWorkoutExercise, nextExerciseAfterCompletedSet, nextRestTarget, normalizeSetForCompletion, removeWorkoutSet, restoreActiveWorkout, restoreWorkoutExercise, selectWorkoutExercise, setWorkoutSetType, shouldStartRest, skipWorkoutExercise, swapWorkoutExercise, toFiniteNumber, toggleRestPause } from "./workoutLogic";
 import type { ActiveWorkout, ExerciseTemplate, RestState } from "./types";
 
 const normal:ExerciseTemplate={id:"x",name:"X",sets:2,repMin:6,repMax:8,rir:"2",tempo:"2110",restSec:120};
@@ -82,6 +82,21 @@ describe("superset rest",()=>{
   workout.exercises[1].sets[1].completedAt=40;
   expect(nextExerciseAfterCompletedSet(workout,1,1)).toBe("C");
   expect(shouldStartRest(workout,1,1)).toBe(false);
+ });
+
+ it("uses the workout-local ID for the rest target of a swapped superset exercise",()=>{
+  const target={...normal,superset:"arms"};
+  const workout:ActiveWorkout={id:"w",templateId:"t",name:"T",startedAt:1,exercises:[
+   {logId:"local-a",templateExerciseId:"plan-a",name:"Alt A",target,sets:[
+    {id:"a1",setNo:1,weight:10,reps:8,rir:1,completedAt:10},
+    {id:"a2",setNo:2,weight:null,reps:null,rir:null,completedAt:null}
+   ]},
+   {templateExerciseId:"B",name:"B",target,sets:[
+    {id:"b1",setNo:1,weight:10,reps:8,rir:1,completedAt:20},
+    {id:"b2",setNo:2,weight:null,reps:null,rir:null,completedAt:null}
+   ]}
+  ]};
+  expect(nextRestTarget(workout,1,0)).toEqual({exerciseId:"local-a",exerciseName:"Alt A",setNo:2});
  });
 });
 
@@ -170,5 +185,48 @@ describe("session-only set editing",()=>{
   const original=structuredClone(workout);original.exercises[0].sets[0].rir="3";
   const updated=setWorkoutSetType(original,"A","s1","failure");
   expect(updated.exercises[0].sets[0]).toMatchObject({type:"failure",toFailure:true,rir:"3"});
+ });
+});
+
+describe("active workout exercise actions",()=>{
+ const workout:ActiveWorkout={id:"w",templateId:"t",name:"T",startedAt:1,currentExerciseId:"A",exercises:[
+  {templateExerciseId:"A",name:"A",target:normal,sets:[{id:"done",setNo:1,weight:50,reps:8,rir:2,completedAt:10},{id:"open",setNo:2,weight:null,reps:null,rir:null,completedAt:null}]},
+  {templateExerciseId:"B",name:"B",target:{...normal,id:"B"},sets:[{id:"b",setNo:1,weight:null,reps:null,rir:null,completedAt:null}]},
+  {templateExerciseId:"C",name:"C",target:{...normal,id:"C"},sets:[{id:"c",setNo:1,weight:null,reps:null,rir:null,completedAt:null}]}
+ ]};
+ it("skips without deleting the exercise or its completed history, then can restore it",()=>{
+  const skipped=skipWorkoutExercise(workout,"A");
+  expect(skipped.currentExerciseId).toBe("B");expect(skipped.exercises[0].status).toBe("skipped");expect(skipped.exercises[0].sets[0].completedAt).toBe(10);
+  expect(restoreWorkoutExercise(skipped,"A").exercises[0].status).toBe("active");
+ });
+ it("moves the current exercise to the end and persists the next pointer",()=>{
+  const moved=moveWorkoutExerciseToEnd(workout,"A");
+  expect(moved.exercises.map(exercise=>exercise.templateExerciseId)).toEqual(["B","C","A"]);
+  expect(moved.currentExerciseId).toBe("B");
+  expect(restoreActiveWorkout(structuredClone(moved)).currentExerciseId).toBe("B");
+ });
+ it("keeps completed sets in the old workout log when replacing an exercise",()=>{
+  const changed=swapWorkoutExercise(workout,"A",{...normal,id:"dumbbell",name:"Wyciskanie hantli"},(()=>{let i=0;return()=>`new-${++i}`})());
+  expect(changed.exercises).toHaveLength(4);
+  expect(changed.exercises[0]).toMatchObject({status:"replaced",replacedBy:"Wyciskanie hantli"});
+  expect(changed.exercises[0].sets[0]).toMatchObject({weight:50,completedAt:10});
+  expect(changed.exercises[1]).toMatchObject({logId:"new-1",templateExerciseId:"dumbbell",status:"active",replacesLogId:"A"});
+  expect(changed.exercises[1].sets.every(set=>!set.completedAt)).toBe(true);
+  expect(changed.currentExerciseId).toBe("new-1");
+  expect(workout.exercises[0].status).toBeUndefined();
+ });
+ it("navigates directly by workout-local identity",()=>{
+  const swapped=swapWorkoutExercise(workout,"A",{...normal,id:"B",name:"Alternate"},()=>"alt-log");
+  expect(exerciseLogId(swapped.exercises[1])).toBe("alt-log");
+  expect(selectWorkoutExercise(swapped,"B").currentExerciseId).toBe("B");
+  expect(selectWorkoutExercise(swapped,"alt-log").currentExerciseId).toBe("alt-log");
+ });
+ it("reports completed, current, upcoming, skipped, and replaced navigation states",()=>{
+  expect(exerciseNavigationStatus(workout,"A")).toBe("current");
+  expect(exerciseNavigationStatus(workout,"B")).toBe("upcoming");
+  const completed={...workout,currentExerciseId:"A",exercises:workout.exercises.map((exercise,index)=>index===1?{...exercise,sets:exercise.sets.map(set=>({...set,completedAt:10}))}:exercise)};
+  expect(exerciseNavigationStatus(completed,"B")).toBe("completed");
+  const skipped=skipWorkoutExercise(workout,"A");expect(exerciseNavigationStatus(skipped,"A")).toBe("skipped");
+  const swapped=swapWorkoutExercise(workout,"A",{...normal,id:"D",name:"D"},()=>"new");expect(exerciseNavigationStatus(swapped,"A")).toBe("replaced");
  });
 });

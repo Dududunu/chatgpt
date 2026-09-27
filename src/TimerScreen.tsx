@@ -1,4 +1,4 @@
-import { toFiniteNumber } from "./workoutLogic";
+import { exerciseLogId, toFiniteNumber } from "./workoutLogic";
 import { restProgress } from "./timerLogic";
 import type { ActiveWorkout, RestState } from "./types";
 
@@ -9,7 +9,7 @@ const circumference=2*Math.PI*104;
 export function TimerScreen({rest,remaining,now,active,onClose,onAdjust,onPause,onSkip}:Props){
  const paused=rest.pausedRemaining!==undefined;
  const ended=remaining<=0&&!paused;
- const exercise=rest.kind==="manual"?null:active?.exercises.find(item=>rest.nextExerciseId?item.templateExerciseId===rest.nextExerciseId:item.name===rest.exerciseName);
+ const exercise=rest.kind==="manual"?null:active?.exercises.find(item=>rest.nextExerciseId?exerciseLogId(item)===rest.nextExerciseId:item.name===rest.exerciseName);
  const upcoming=exercise?.sets.find(set=>set.setNo===rest.nextSet);
  const previous=exercise?.sets.find(set=>set.setNo===rest.nextSet-1&&set.completedAt);
  const weight=toFiniteNumber(upcoming?.weight??previous?.weight??null);

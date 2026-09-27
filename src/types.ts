@@ -17,6 +17,8 @@ export type ExerciseTemplate={
  muscleGroup?:string;
  equipment?:string;
  minIncrement?:number;
+ /** Allow plate tools for a non-barbell movement when the user knows it uses a bar. */
+ plateCalculatorEnabled?:boolean;
 };
 
 export type WorkoutTemplate=SyncFields&{id:string;name:string;exercises:ExerciseTemplate[];createdAt?:number};
@@ -29,17 +31,28 @@ export type SetLog={
  rir:NumericField;
  completedAt:number|null;
  type?:SetType;
+ warmupGenerated?:boolean;
  toFailure?:boolean;
  restStartedAt?:number;
  restEndsAt?:number;
 };
 
 export type ExerciseLog={
+ /** Stable workout-local identity; templateExerciseId remains the plan/catalog reference. */
+ logId?:string;
+ /** null marks a snapshot-only replacement with no plan entry until explicitly saved. */
+ planExerciseId?:string|null;
  templateExerciseId:string;
  name:string;
  target:ExerciseTemplate;
  sets:SetLog[];
  note?:string;
+ nextSessionNote?:string;
+ previousSessionNote?:string;
+ previousNoteDismissed?:boolean;
+ status?:"active"|"skipped"|"replaced";
+ replacedBy?:string;
+ replacesLogId?:string;
 };
 
 export type RestState={
@@ -111,6 +124,7 @@ export type Settings=SyncFields&{
  autoRest:boolean;
  sound:boolean;
  vibration:boolean;
+ haptics?:boolean;
  theme:"dark"|"light"|"system";
  hideMotion?:boolean;
  showExerciseImages?:boolean;
@@ -118,6 +132,9 @@ export type Settings=SyncFields&{
  defaultIncrement?:number;
  prefillPreviousWeight?:boolean;
  keepScreenAwake?:boolean;
+ barWeight?:number;
+ availablePlates?:number[];
+ copyPreviousRir?:boolean;
 };
 
 export type SyncMeta={

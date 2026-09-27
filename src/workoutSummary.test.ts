@@ -32,4 +32,13 @@ describe("finished workout summary",()=>{
   workout.exercises[0].sets.push({...workout.exercises[0].sets[0],id:"warm-up",weight:100,reps:8,type:"warmup"});
   expect(bestSetsInWorkout(workout).map(item=>item.exerciseName)).toEqual(["Bench","Row"]);
  });
+ it("excludes skipped exercises and warm-ups from the workout summary",()=>{
+  const workout=session("skip",100,90,8);
+  workout.exercises[0].sets[0].type="warmup";
+  workout.exercises.push({...workout.exercises[0],templateExerciseId:"skipped",name:"Skipped",status:"skipped",sets:[{...workout.exercises[0].sets[0],id:"skipped-set",type:"normal",weight:120}]});
+  const summary=summarizeWorkout(workout,[]);
+  expect(summary.completedSets).toBe(0);
+  expect(summary.volume).toBe(0);
+  expect(summary.bestSets).toEqual([]);
+ });
 });

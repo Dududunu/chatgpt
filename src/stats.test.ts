@@ -80,4 +80,13 @@ describe("strength statistics",()=>{
   expect(volume(w)).toBe(850);
   expect(bestE1rm([w],"X")).toBeCloseTo(e1rm(50,8),5);
  });
+
+ it("excludes skipped exercises from volume and personal records",()=>{
+  const w=workout([set("100","8",10)]);
+  w.exercises[0].status="skipped";
+  expect(volume(w)).toBe(0);
+  expect(bestE1rm([w],"X")).toBe(0);
+  expect(actual1rm([w],"X")).toBe(0);
+  expect(recentPrCount([w],0)).toBe(0);
+ });
 });

@@ -37,6 +37,14 @@ describe("fullscreen rest timer recovery",()=>{
   expect(remainingRestMs(resumed,70_000)).toBe(80_000);
  });
 
+ it("restores the paused fullscreen timer with its saved remainder after reload",()=>{
+  const pausedWorkout={...workout,rest:toggleRestPause(rest,40_000)};
+  const restored=restoreActiveWorkout(structuredClone(pausedWorkout));
+  expect(restored.rest?.pausedRemaining).toBe(90_000);
+  expect(shouldShowFullscreenTimer(restored.id,restored.rest,null)).toBe(true);
+  expect(remainingRestMs(restored.rest!,250_000)).toBe(90_000);
+ });
+
  it("does not restart notifications by changing a timer after it has ended",()=>{
   const finished={...rest,notifiedAt:130_000};
   expect(adjustRestTimer(finished,-30,140_000)).toEqual(finished);

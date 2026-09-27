@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
-import { actual1rm, bestE1rm, e1rm, recentPrCount, volume } from "./stats";
+import { actual1rm, bestE1rm, e1rm, isPrCandidate, recentPrCount, volume } from "./stats";
 import { toFiniteNumber } from "./workoutLogic";
 import type { BodyEntry, SetLog, WorkoutHistory } from "./types";
 
@@ -9,7 +9,8 @@ type Range="1M"|"3M"|"6M"|"1Y"|"ALL";
 const ranges:Range[]=["1M","3M","6M","1Y","ALL"];
 const rangeMs:Record<Exclude<Range,"ALL">,number>={"1M":30*864e5,"3M":90*864e5,"6M":183*864e5,"1Y":365*864e5};
 const dateLabel=(time:number)=>new Intl.DateTimeFormat("pl-PL",{day:"numeric",month:"short"}).format(time);
-const validStrengthSet=(set:SetLog)=>{
+const validStrengthSet=(set:SetLog,skipped=false)=>{
+ if(skipped||!isPrCandidate(set,false))return null;
  const weight=toFiniteNumber(set.weight),reps=toFiniteNumber(set.reps);
  return set.completedAt&&weight!==null&&reps!==null&&weight>=0&&reps>0&&Number.isInteger(reps)?{weight,reps}:null;
 };
@@ -27,12 +28,12 @@ export function ProgressScreen({workouts,body}:{workouts:WorkoutHistory[];body:B
   if(mode==="volume")return selected.map(workout=>({timestamp:workout.startedAt,label:dateLabel(workout.startedAt),value:Math.round(volume(workout))})).filter(point=>point.value>0);
   if(mode==="best")return selected.map(workout=>{
    let value=0;
-   for(const exercise of workout.exercises)if(exercise.name===activeName&&!exercise.target.timed)for(const set of exercise.sets){const normalized=validStrengthSet(set);if(normalized)value=Math.max(value,normalized.weight)}
+   for(const exercise of workout.exercises)if(exercise.name===activeName&&!exercise.target.timed)for(const set of exercise.sets){const normalized=validStrengthSet(set,exercise.status==="skipped");if(normalized)value=Math.max(value,normalized.weight)}
    return {timestamp:workout.startedAt,label:dateLabel(workout.startedAt),value};
   }).filter(point=>point.value>0);
   return selected.map(workout=>{
    let value=0;
-   for(const exercise of workout.exercises)if(exercise.name===activeName&&!exercise.target.timed)for(const set of exercise.sets){const normalized=validStrengthSet(set);if(normalized){const estimate=e1rm(normalized.weight,normalized.reps);if(Number.isFinite(estimate))value=Math.max(value,estimate)}}
+   for(const exercise of workout.exercises)if(exercise.name===activeName&&!exercise.target.timed)for(const set of exercise.sets){const normalized=validStrengthSet(set,exercise.status==="skipped");if(normalized){const estimate=e1rm(normalized.weight,normalized.reps);if(Number.isFinite(estimate))value=Math.max(value,estimate)}}
    return {timestamp:workout.startedAt,label:dateLabel(workout.startedAt),value:value?Number(value.toFixed(1)):0};
   }).filter(point=>point.value>0);
  },[mode,range,body,workouts,activeName]);
@@ -42,7 +43,7 @@ export function ProgressScreen({workouts,body}:{workouts:WorkoutHistory[];body:B
  const prs=recentPrCount(workouts);
  const actual=actual1rm(workouts,benchName),estimated=bestE1rm(workouts,benchName);
  const highlights=names.map(name=>{
-  const sessions=workouts.map(workout=>({workout,value:workout.exercises.filter(exercise=>exercise.name===name&&!exercise.target.timed).flatMap(exercise=>exercise.sets.map(validStrengthSet).filter((set):set is {weight:number;reps:number}=>Boolean(set))).reduce((best,set)=>Math.max(best,e1rm(set.weight,set.reps)),0)})).filter(item=>item.value>0).sort((a,b)=>a.workout.startedAt-b.workout.startedAt);
+  const sessions=workouts.map(workout=>({workout,value:workout.exercises.filter(exercise=>exercise.name===name&&!exercise.target.timed).flatMap(exercise=>exercise.sets.map(set=>validStrengthSet(set,exercise.status==="skipped")).filter((set):set is {weight:number;reps:number}=>Boolean(set))).reduce((best,set)=>Math.max(best,e1rm(set.weight,set.reps)),0)})).filter(item=>item.value>0).sort((a,b)=>a.workout.startedAt-b.workout.startedAt);
   if(!sessions.length)return null;
   const latest=sessions.at(-1)!;
   return {name,value:latest.value,change:latest.value-sessions[0].value};

@@ -1,5 +1,6 @@
 import { useState } from "react";
 import type { BodyEntry, Settings } from "./types";
+import { DEFAULT_PLATES } from "./barbellTools";
 import { syncStatusMessage } from "./authMessages";
 import { validateDeleteConfirmation, validateDisplayName, validatePasswordChange } from "./accountLogic";
 
@@ -64,10 +65,12 @@ export function MoreScreen({settings,body,accountEmail,displayName,syncStatus,on
    <label className="setting-row"><span><b>Minimalny skok ciężaru</b><small>Progresja dla nowych ćwiczeń</small></span><span className="setting-input"><input type="number" inputMode="decimal" step="0.1" min="0.1" value={settings.defaultIncrement??2.5} onChange={event=>void update({defaultIncrement:boundedFloat(event.target.value,.1,100,2.5)})}/> kg</span></label>
    <Toggle label="Autostart przerwy" checked={settings.autoRest} onChange={autoRest=>void update({autoRest})}/>
    <Toggle label="Dźwięk po przerwie" checked={settings.sound} onChange={sound=>void update({sound})}/>
-   <Toggle label="Wibracja po przerwie" checked={settings.vibration} onChange={vibration=>void update({vibration})}/>
+   <Toggle label="Haptyka" checked={settings.haptics??settings.vibration} onChange={haptics=>void update({haptics,vibration:haptics})}/>
    <Toggle label="Pokaż grafiki ćwiczeń" checked={settings.showExerciseImages??true} onChange={showExerciseImages=>void update({showExerciseImages})}/>
    <Toggle label="Wstępnie wpisuj poprzedni ciężar" checked={settings.prefillPreviousWeight??false} onChange={prefillPreviousWeight=>void update({prefillPreviousWeight})}/>
+   <Toggle label="Kopiuj RIR z poprzedniej serii" checked={settings.copyPreviousRir??false} onChange={copyPreviousRir=>void update({copyPreviousRir})}/>
    <Toggle label="Nie wygaszaj ekranu podczas treningu" checked={settings.keepScreenAwake??true} onChange={keepScreenAwake=>void update({keepScreenAwake})}/>
+   <div className="plate-settings"><b>Ustawienia talerzy</b><label className="setting-row"><span><b>Waga gryfu</b></span><select aria-label="Waga gryfu" value={settings.barWeight===15?"15":settings.barWeight===20?"20":"custom"} onChange={event=>{const value=event.target.value;if(value!=="custom")void update({barWeight:Number(value)})}}><option value="20">20 kg</option><option value="15">15 kg</option><option value="custom">Własna</option></select></label>{settings.barWeight!==15&&settings.barWeight!==20&&<label className="field-label">WŁASNA WAGA GRYFU (KG)<input type="number" inputMode="decimal" min="1" max="100" step="0.25" value={settings.barWeight??20} onChange={event=>void update({barWeight:boundedFloat(event.target.value,1,100,20)})}/></label>}<span className="muted">Dostępne talerze · każda zaznaczona wartość oznacza komplet na obie strony</span><div className="plate-toggle-grid">{DEFAULT_PLATES.map(plate=><label key={plate}><input type="checkbox" checked={(settings.availablePlates??DEFAULT_PLATES).includes(plate)} onChange={event=>{const current=settings.availablePlates??DEFAULT_PLATES;const next=event.target.checked?[...current,plate]:current.filter(value=>value!==plate);void update({availablePlates:next})}}/><span>{plate} kg</span></label>)}</div></div>
   </section>
   <section className="settings-section"><h3>Wygląd</h3><label className="setting-row"><span><b>Motyw</b></span><select value={settings.theme} onChange={event=>void update({theme:event.target.value as Settings["theme"]})}><option value="dark">Ciemny</option><option value="light">Jasny</option><option value="system">Systemowy</option></select></label></section>
   <section className="settings-section body-section"><h3>Pomiary ciała</h3><form className="body-form" onSubmit={saveBody}>
