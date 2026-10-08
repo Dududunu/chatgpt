@@ -1,0 +1,52 @@
+name: Render Freeze Ball 5s
+
+on:
+  push:
+    branches:
+      - video-freeze-ball-5s
+    paths:
+      - "video/**"
+      - ".github/workflows/render-freeze-ball.yml"
+  workflow_dispatch:
+
+jobs:
+  render:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
+          python -m pip install --upgrade pip
+          pip install pillow
+
+      - name: Render frames
+        run: python video/render_freeze_ball.py
+
+      - name: Encode MP4
+        run: |
+          mkdir -p video/output
+          ffmpeg -y -framerate 30 -i video/frames/frame_%04d.png \
+            -c:v libx264 -preset medium -crf 18 -pix_fmt yuv420p \
+            -movflags +faststart -t 5 video/output/freeze-ball-vs-bomb-ball-5s.mp4
+
+      - name: Verify output
+        run: |
+          ffprobe -v error -show_entries format=duration,size \
+            -of default=noprint_wrappers=1 video/output/freeze-ball-vs-bomb-ball-5s.mp4
+
+      - name: Upload video artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: freeze-ball-vs-bomb-ball-5s
+          path: video/output/freeze-ball-vs-bomb-ball-5s.mp4
+          if-no-files-found: error
